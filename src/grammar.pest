@@ -1,0 +1,25 @@
+start = { SOI ~ module ~ EOI }
+module = { (decl ~ WHITE_SPACE*)* }
+// Okay so what is a declaration?
+// v :((tau? (:|=) vau)|tau)
+decl = {
+  identifier
+  ~ WHITE_SPACE*
+  ~ ":"
+  ~ WHITE_SPACE*
+  ~ (type|(type? ~ WHITE_SPACE* ~ (":"|"=") ~ WHITE_SPACE* ~ expr))
+}
+decl_list = { decl ~ (WHITE_SPACE* ~ "," ~ WHITE_SPACE* ~ decl_list)? }
+identifier = { (ASCII_ALPHA|ASCII_DIGIT|"_")+ }
+type = { "int" }
+expr = { number | proc | block }
+block = { "{" ~ WHITE_SPACE* ~ expr? ~ WHITE_SPACE* ~ and_then? ~ WHITE_SPACE* ~ "}" }
+and_then = { ";" ~ WHITE_SPACE* ~ expr? ~ WHITE_SPACE* ~ and_then? }
+number = { ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT*)? }
+proc = { 
+  "(" ~ WHITE_SPACE* ~ decl_list? ~ WHITE_SPACE* ~ ")"
+  ~ WHITE_SPACE*
+  ~ ("->" ~ WHITE_SPACE* ~ type)?
+  ~ WHITE_SPACE*
+  ~ expr
+}

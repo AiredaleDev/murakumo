@@ -1,0 +1,10 @@
+[package]
+name = "murakumo"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+clap = { version = "4.5.31", features = ["derive"] }
+rug = "1.27.0"
+rustyline = "15.0.0"
+slotmap = "1.0.7"
