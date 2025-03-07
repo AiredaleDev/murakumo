@@ -1,5 +1,7 @@
 use rug::Integer;
-use std::marker::PhantomData;
+use std::{fmt::Display, marker::PhantomData};
+
+use crate::{DebugInfo, KumoError, KumoResult, error::ErrorType};
 
 #[derive(Debug, Clone)]
 pub enum TokenType<'src> {
@@ -49,11 +51,9 @@ pub struct Token<'src> {
     pub col: usize,
 }
 
-type LexResult<T> = Result<T, LexError>;
-
 // Take string and turn it into a TokenStream
 // `collect` is very powerful, it can trivially turn an Iter<Result<T, E>> into a Result<Collection<T>, E>>
-pub fn lex(input: &str) -> LexResult<Vec<Token>> {
+pub fn lex(input: &str) -> KumoResult<Vec<Token>> {
     Lexer::new(input).collect()
 }
 
@@ -80,7 +80,7 @@ impl<'iter, 'src: 'iter> Lexer<'iter, 'src> {
         }
     }
 
-    fn token(&self, ty: TokenType<'src>) -> Option<LexResult<Token<'src>>> {
+    fn token(&self, ty: TokenType<'src>) -> Option<KumoResult<Token<'src>>> {
         Some(Ok(Token {
             ty,
             line: self.line,
@@ -90,14 +90,14 @@ impl<'iter, 'src: 'iter> Lexer<'iter, 'src> {
 
     fn next_char(&mut self) -> char {
         let c = char::from(self.input[self.pos]);
-        (self.pos, _) = self.pos.overflowing_add(1);
-        (self.col, _) = self.col.overflowing_add(1);
+        self.pos += 1;
+        self.col += 1;
         c
     }
 
     fn new_line(&mut self) {
         self.line += 1;
-        self.col = usize::max_value();
+        self.col = 0;
     }
 
     fn peek_char(&self) -> Option<char> {
@@ -113,7 +113,7 @@ impl<'iter, 'src: 'iter> Lexer<'iter, 'src> {
         second: char,
         single: TokenType<'src>,
         double: TokenType<'src>,
-    ) -> Option<LexResult<Token<'src>>> {
+    ) -> Option<KumoResult<Token<'src>>> {
         match self.peek_char() {
             Some(c) if c == second => {
                 self.next_char();
@@ -123,7 +123,7 @@ impl<'iter, 'src: 'iter> Lexer<'iter, 'src> {
         }
     }
 
-    fn take_numeric_lit(&mut self) -> LexResult<Token<'src>> {
+    fn take_numeric_lit(&mut self) -> KumoResult<Token<'src>> {
         let start = self.pos - 1;
         let start_col = self.col - 1;
         let mut is_float = false;
@@ -138,7 +138,15 @@ impl<'iter, 'src: 'iter> Lexer<'iter, 'src> {
             self.next_char();
         }
 
-        let whoops = LexError::BadNumericLiteral { pos: start, line: self.line, col: start_col };
+        let whoops = KumoError::new(
+            LexErrorType::BadNumericLiteral,
+            DebugInfo {
+                pos: start,
+                line: self.line,
+                col: start_col,
+                len: self.pos - start,
+            },
+        );
         let str_repr = str::from_utf8(&self.input[start..self.pos])
             .expect("We got misaligned here, not valid UTF-8. This should never happen.");
 
@@ -151,18 +159,26 @@ impl<'iter, 'src: 'iter> Lexer<'iter, 'src> {
         }
     }
 
-    fn take_string_lit(&mut self) -> LexResult<Token<'src>> {
+    fn take_string_lit(&mut self) -> KumoResult<Token<'src>> {
         let start = self.pos - 1;
         let start_col = self.col - 1;
         while let Some(c) = self.peek_char() {
             if c == '"' {
                 break;
-            } 
+            }
 
             self.next_char();
 
             if self.pos == self.input.len() || c == '\n' {
-                return Err(LexError::UndelimitedString { pos: start, line: self.line, col: start_col });
+                return Err(KumoError::new(
+                    LexErrorType::UndelimitedString,
+                    DebugInfo {
+                        pos: start,
+                        line: self.line,
+                        col: start_col,
+                        len: self.pos - start,
+                    },
+                ));
             }
         }
         self.next_char();
@@ -173,7 +189,7 @@ impl<'iter, 'src: 'iter> Lexer<'iter, 'src> {
         self.token(TokenType::StrLit(str_lit)).unwrap()
     }
 
-    fn take_identifier(&mut self) -> LexResult<Token<'src>> {
+    fn take_identifier(&mut self) -> KumoResult<Token<'src>> {
         let start = self.pos - 1;
         while let Some(c) = self.peek_char() {
             if !c.is_alphanumeric() && c != '_' {
@@ -189,7 +205,7 @@ impl<'iter, 'src: 'iter> Lexer<'iter, 'src> {
 }
 
 impl<'iter, 'src: 'iter> Iterator for Lexer<'iter, 'src> {
-    type Item = LexResult<Token<'src>>;
+    type Item = KumoResult<Token<'src>>;
 
     // Unfortunately, we put our faith in the compiler to unroll
     // the recursion into a loop.
@@ -249,8 +265,22 @@ impl<'iter, 'src: 'iter> Iterator for Lexer<'iter, 'src> {
 }
 
 #[derive(Debug)]
-pub enum LexError {
-    BadNumericLiteral { pos: usize, line: usize, col: usize },
-    UndelimitedString { pos: usize, line: usize, col: usize },
+pub enum LexErrorType {
+    BadNumericLiteral,
+    UndelimitedString,
 }
 
+impl Display for LexErrorType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::BadNumericLiteral => write!(f, "Bad numeric literal"),
+            Self::UndelimitedString => write!(f, "Found undelimited string"),
+        }
+    }
+}
+
+impl From<LexErrorType> for ErrorType {
+    fn from(value: LexErrorType) -> Self {
+        ErrorType::Lexer(value)
+    }
+}

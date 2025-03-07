@@ -1,9 +1,11 @@
 use clap::Parser;
-use std::{path::PathBuf, fs::read_to_string};
+use std::{fs::read_to_string, path::PathBuf};
 
+mod error;
 mod lexer;
 mod parser;
 
+pub use error::{DebugInfo, KumoError, KumoResult};
 use lexer::lex;
 
 #[derive(Parser)]
@@ -12,9 +14,10 @@ struct Args {
     files: Vec<PathBuf>,
 }
 
-fn compile(input: String) {
-    let tokens = lex(&input).unwrap();
+fn compile(input: &str) -> KumoResult<()> {
+    let tokens = lex(input)?;
     println!("{tokens:#?}");
+    Ok(())
 }
 
 fn repl() {
@@ -29,7 +32,9 @@ fn repl() {
             }
         };
 
-        compile(input);
+        if let Err(e) = compile(&input) {
+            error::report(&input, e, None);
+        }
     }
 
     println!("See ya.");
@@ -43,11 +48,13 @@ fn main() {
     // how to make a REPL will be less obvious. That said, I still think all languages should have
     // a REPL, even ones like this. It makes scratching out your ideas much easier.
     let cli = Args::parse();
-    
+
     if cli.files.len() > 0 {
         for file in cli.files {
-            let input = read_to_string(file).expect("Where's that file?");
-            compile(input);
+            let input = read_to_string(&file).expect("Where's that file?");
+            if let Err(e) = compile(&input) {
+                error::report(&input, e, Some(&file));
+            }
         }
     } else {
         repl();

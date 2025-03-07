@@ -1,0 +1,4 @@
+real :: (x: nat, y: nat) {
+    x + "hey;
+    y * "bro;
+}
