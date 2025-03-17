@@ -1,12 +1,15 @@
-use rug::Integer;
+// We don't have to support arbitrary precision integers if we don't want to
+// Now this code REALLY never allocates :)
+// use rug::Integer;
 use std::{fmt::Display, marker::PhantomData};
 
 use crate::{DebugInfo, KumoError, KumoResult, error::ErrorType};
 
-#[derive(Debug, Clone)]
+// f64s are not Eq -- NaN != NaN :(
+#[derive(Debug, Clone, PartialEq)]
 pub enum TokenType<'src> {
     // Literals
-    IntLit(Integer),
+    IntLit(i64),
     FloatLit(f64),
     Ident(&'src str),
     StrLit(&'src str),
@@ -39,6 +42,7 @@ pub enum TokenType<'src> {
     // Misc
     Semicolon,
     Arrow,
+    DoubleArrow,
     Comma,
     Dot,
 }
@@ -53,7 +57,7 @@ pub struct Token<'src> {
 
 // Take string and turn it into a TokenStream
 // `collect` is very powerful, it can trivially turn an Iter<Result<T, E>> into a Result<Collection<T>, E>>
-pub fn lex(input: &str) -> KumoResult<Vec<Token>> {
+pub fn lex(input: &str) -> KumoResult<Box<[Token]>> {
     Lexer::new(input).collect()
 }
 
@@ -108,18 +112,27 @@ impl<'iter, 'src: 'iter> Lexer<'iter, 'src> {
         }
     }
 
-    fn try_match_two(
+    // I guess this makes a copy of the function for every array size
+    // we pass in, keep it small or make this guy take slices!
+    fn try_match_two<const N: usize>(
         &mut self,
-        second: char,
+        cands: [char; N],
         single: TokenType<'src>,
-        double: TokenType<'src>,
+        doubles: [TokenType<'src>; N],
     ) -> Option<KumoResult<Token<'src>>> {
         match self.peek_char() {
-            Some(c) if c == second => {
-                self.next_char();
-                self.token(double)
+            Some(c) => {
+                cands
+                    .iter()
+                    .position(|t| c == *t)
+                    .map_or(self.token(single), |i| {
+                        self.next_char();
+                        // This copy *should* be trivial.
+                        // I don't expect to pass anything non-unit into here.
+                        self.token(doubles[i].clone())
+                    })
             }
-            _ => self.token(single),
+            None => self.token(single),
         }
     }
 
@@ -226,7 +239,7 @@ impl<'iter, 'src: 'iter> Iterator for Lexer<'iter, 'src> {
             '{' => self.token(TokenType::LCurly),
             '}' => self.token(TokenType::RCurly),
             '+' => self.token(TokenType::Plus),
-            '-' => self.try_match_two('>', TokenType::Minus, TokenType::Arrow),
+            '-' => self.try_match_two(['>'], TokenType::Minus, [TokenType::Arrow]),
             '*' => self.token(TokenType::Star),
             '/' => {
                 match self.peek_char() {
@@ -243,10 +256,14 @@ impl<'iter, 'src: 'iter> Iterator for Lexer<'iter, 'src> {
                     _ => self.token(TokenType::Slash),
                 }
             }
-            '=' => self.try_match_two('=', TokenType::Equal, TokenType::DoubleEq),
-            '!' => self.try_match_two('=', TokenType::Bang, TokenType::BangEq),
-            '<' => self.try_match_two('=', TokenType::Less, TokenType::LessEq),
-            '>' => self.try_match_two('=', TokenType::Greater, TokenType::GreaterEq),
+            '=' => self.try_match_two(
+                ['=', '>'],
+                TokenType::Equal,
+                [TokenType::DoubleEq, TokenType::DoubleArrow],
+            ),
+            '!' => self.try_match_two(['='], TokenType::Bang, [TokenType::BangEq]),
+            '<' => self.try_match_two(['='], TokenType::Less, [TokenType::LessEq]),
+            '>' => self.try_match_two(['='], TokenType::Greater, [TokenType::GreaterEq]),
             '"' => Some(self.take_string_lit()),
             '\n' => {
                 self.new_line();

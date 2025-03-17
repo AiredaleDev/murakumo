@@ -6,6 +6,7 @@ mod lexer;
 mod parser;
 
 pub use error::{DebugInfo, KumoError, KumoResult};
+pub use lexer::Token;
 use lexer::lex;
 
 #[derive(Parser)]
