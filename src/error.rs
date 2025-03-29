@@ -17,6 +17,7 @@ pub struct DebugInfo {
 #[derive(Debug)]
 pub enum ErrorType {
     Lexer(LexErrorType),
+    OneOff(&'static str),
 }
 
 #[derive(Debug)]
@@ -40,6 +41,7 @@ impl Display for KumoError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self.ty {
             ErrorType::Lexer(lex) => write!(f, "{lex}"),
+            ErrorType::OneOff(msg) => write!(f, "{msg}"),
         }
     }
 }

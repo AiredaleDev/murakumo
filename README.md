@@ -2,11 +2,11 @@
 
 I might want to change the name of this, since the first result is a warship even though its literal meaning is "gathering clouds," which fits the weather theme.
 
-I conceived of this language both as a fun exercise in looking at this old paper: <link> and to make a Youtube tutorial series on compiler construction.
+I conceived of this language both as a fun exercise in looking at this [old paper](https://www.cs.umd.edu/projects/cyclone/papers/cyclone-regions.pdf) and to make a Youtube tutorial series on compiler construction.
 
 Everything except the parser and some useful data structures are hand-written. I want to teach a curious viewer the basics of compiler construction, with a focus on optimization and code-generation, only mentioning enough type theory to make programming in the language nicer. If they want to learn LLVM, they can read Kaleidoscope as a starting point.
 
-For the sake of brevity, I'll work out this whole compiler, then present how to build it piece-by-piece. I understand that the reality of implementing something is debugging it yourself for hours, but 
+I think in terms of video/blog post content, I think the most valuable thing would be to present certain *algorithms* as opposed to code, as well as my thought process for tricky parts.
 
 ### Language Features
 

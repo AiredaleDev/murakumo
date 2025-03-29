@@ -8,6 +8,7 @@ mod parser;
 pub use error::{DebugInfo, KumoError, KumoResult};
 pub use lexer::Token;
 use lexer::lex;
+use parser::parse;
 
 #[derive(Parser)]
 #[command(version, about)]
@@ -17,7 +18,9 @@ struct Args {
 
 fn compile(input: &str) -> KumoResult<()> {
     let tokens = lex(input)?;
-    println!("{tokens:#?}");
+    // println!("{tokens:#?}");
+    let ast = parse(tokens)?;
+    println!("{ast}");
     Ok(())
 }
 

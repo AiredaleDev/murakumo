@@ -23,6 +23,7 @@ pub enum TokenType<'src> {
     Minus,
     Star,
     Slash,
+    Percent,
     DoubleEq,
     Bang,
     BangEq,
@@ -112,8 +113,6 @@ impl<'iter, 'src: 'iter> Lexer<'iter, 'src> {
         }
     }
 
-    // I guess this makes a copy of the function for every array size
-    // we pass in, keep it small or make this guy take slices!
     fn try_match_two<const N: usize>(
         &mut self,
         cands: [char; N],
@@ -128,7 +127,7 @@ impl<'iter, 'src: 'iter> Lexer<'iter, 'src> {
                     .map_or(self.token(single), |i| {
                         self.next_char();
                         // This copy *should* be trivial.
-                        // I don't expect to pass anything non-unit into here.
+                        // I don't expect to pass any non-unit variants to this function.
                         self.token(doubles[i].clone())
                     })
             }
@@ -256,6 +255,7 @@ impl<'iter, 'src: 'iter> Iterator for Lexer<'iter, 'src> {
                     _ => self.token(TokenType::Slash),
                 }
             }
+            '%' => self.token(TokenType::Percent),
             '=' => self.try_match_two(
                 ['=', '>'],
                 TokenType::Equal,
