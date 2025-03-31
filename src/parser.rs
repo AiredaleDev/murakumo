@@ -6,7 +6,7 @@ use crate::{KumoError, KumoResult, Token, lexer::TokenType};
 // I wanted to use `Bump` and have AST nodes store mutables references to/boxed slices pointing into the `Bump`,
 // but I couldn't quite convince the borrow-checker that
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct AST<'src> {
     pub nodes: SlotMap<DefaultKey, ASTNode<'src>>,
     pub root: DefaultKey,
@@ -61,17 +61,40 @@ enum ASTNodeType<'src> {
     },
 }
 
+// I'll draw out the grammar after I write a parser lol.
+// Eric Eidt's parser is very elegant and makes Pratt parsing look like confusing messes in comparison.
+// Object-oriented programming may have poisoned my brain so I my code may not do justice to its
+// simple beauty.
+// (Most "OOP" I do here is because I have "implicit context state" that I want to persist)
+pub fn parse(tokens: Box<[Token]>) -> KumoResult<AST> {
+    Parser::new().parse(tokens)
+}
+
+// Basically `distinct bool`
+#[derive(Debug)]
+enum ParserState {
+    Unary,
+    Binary,
+}
+
 // The order of the enum fields defines operator precedence.
 // Appears later -> binds tighter (closer to leaves).
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum Op {
-    // Semantics of semicolon
-    ConsStmt,
+    // Chain of semicolon delimeted expressions/stmts.
+    // During reduction, these are folded into each other
+    // so function bodies don't form linked lists and can be walked quickly.
+    Block,
     // I claim that these too are binops!
     Decl,
     Assign,
     // The second colon in `::`
     Define,
+
+    // A chain of comma-separated nodes (hence why it's not called "comma."
+    // Similar to semicolons
+    Seq,
+    Group,
 
     // Arithmetic
     Subtract,
@@ -91,170 +114,134 @@ impl Op {
             _ => 2,
         }
     }
+
+    fn bin_of_token(tok: &TokenType) -> Self {
+        match tok {
+            TokenType::Plus => Op::Add,
+            TokenType::Minus => Op::Subtract,
+            TokenType::Star => Op::Multiply,
+            TokenType::Slash => Op::Divide,
+            TokenType::Percent => Op::Mod,
+            _ => unreachable!(),
+        }
+    }
 }
 
-// I'll draw out the grammar after I write a parser lol.
-// TODO: Understand and implement Erik Eidt's parser.
-// The first step was delightfully easy.
-// Two stacks (operator, operand), two states: (unary, binary)
-// Actually, it's very elegant. Push operators and operands onto the stack until they are needed,
-// combining them into a tree by popping them on-demand.
-pub fn parse(tokens: Box<[Token]>) -> KumoResult<AST> {
-    let mut ast = AST {
-        nodes: SlotMap::new(),
-        root: DefaultKey::null(),
-        args: Vec::new(),
-    };
 
-    let mut operator_stack = Vec::new();
-    let mut operand_stack = Vec::new();
+struct Parser<'src> {
+    state: ParserState,
+    ast: AST<'src>,
+    operand_stack: Vec<DefaultKey>,
+    operator_stack: Vec<Op>,
+}
 
-    // Basically `distinct bool`
-    #[derive(Debug)]
-    enum ParserState {
-        Unary,
-        Binary,
+impl<'src> Parser<'src> {
+    fn new() -> Self {
+        Self {
+            state: ParserState::Unary,
+            ast: AST::default(),
+            operand_stack: Vec::new(),
+            operator_stack: Vec::new(),
+        }
     }
 
-    let mut state = ParserState::Unary;
+    fn parse(mut self, tokens: Box<[Token<'src>]>) -> KumoResult<AST<'src>> {
+        for t in tokens {
+            match self.state {
+                ParserState::Unary => self.unary(t),
+                ParserState::Binary => self.binary(t)?,
+            }
+        }
 
-    for t in tokens {
-        match t.ty {
-            // Lots of very redundant code here.
-            // I did not consider this algorithm when defining my tokens.
-            name @ TokenType::Ident(_) => match state {
-                ParserState::Unary => {
-                    let k = ast
-                        .nodes
-                        .insert(ASTNode::leaf(ASTNodeType::Ident { name, ty: None }));
-                    operand_stack.push(k);
-                    state = ParserState::Binary;
-                }
-                ParserState::Binary => {}
-            },
-            lit @ TokenType::IntLit(_) => match state {
-                ParserState::Unary => {
-                    let k = ast.nodes.insert(ASTNode::leaf(ASTNodeType::Literal {
-                        val: lit,
-                        ty: Type::ComptimeInt,
-                    }));
-                    operand_stack.push(k);
-                    state = ParserState::Binary;
-                }
-                ParserState::Binary => {}
-            },
-            lit @ TokenType::FloatLit(_) => match state {
-                ParserState::Unary => {
-                    let k = ast.nodes.insert(ASTNode::leaf(ASTNodeType::Literal {
-                        val: lit,
-                        ty: Type::ComptimeFloat,
-                    }));
-                    operand_stack.push(k);
-                    state = ParserState::Binary;
-                }
-                ParserState::Binary => {}
-            },
-            lit @ TokenType::StrLit(_) => match state {
-                ParserState::Unary => {
-                    let k = ast.nodes.insert(ASTNode::leaf(ASTNodeType::Literal {
-                        val: lit,
-                        ty: Type::String,
-                    }));
-                    operand_stack.push(k);
-                    state = ParserState::Binary;
-                }
-                ParserState::Binary => {}
-            },
-            TokenType::Plus => match state {
-                ParserState::Unary => {
-                    // TODO: Error accumulation.
-                }
-                ParserState::Binary => {
-                    while let Some(op) = operator_stack.pop_if(|op| *op > Op::Add) {
-                        reduce(&mut ast, &mut operand_stack, op)?;
-                    }
-                    operator_stack.push(Op::Add);
-                    state = ParserState::Unary;
-                }
-            },
-            TokenType::Minus => match state {
-                ParserState::Unary => {
-                    operator_stack.push(Op::Negate);
-                }
-                ParserState::Binary => {
-                    while let Some(op) = operator_stack.pop_if(|op| *op > Op::Subtract) {
-                        reduce(&mut ast, &mut operand_stack, op)?;
-                    }
-                    operator_stack.push(Op::Subtract);
-                    state = ParserState::Unary;
-                }
-            },
-            TokenType::Star => match state {
-                ParserState::Unary => {
-                    // TODO: Pointer Dereference?
-                }
-                ParserState::Binary => {
-                    while let Some(op) = operator_stack.pop_if(|op| *op > Op::Multiply) {
-                        reduce(&mut ast, &mut operand_stack, op)?;
-                    }
-                    operator_stack.push(Op::Multiply);
-                    state = ParserState::Unary;
-                }
-            },
-            TokenType::Slash => match state {
-                ParserState::Unary => {}
-                ParserState::Binary => {
-                    while let Some(op) = operator_stack.pop_if(|op| *op > Op::Divide) {
-                        reduce(&mut ast, &mut operand_stack, op)?;
-                    }
-                    operator_stack.push(Op::Divide);
-                    state = ParserState::Unary;
-                }
-            },
-            TokenType::Percent => match state {
-                ParserState::Unary => {}
-                ParserState::Binary => {
-                    while let Some(op) = operator_stack.pop_if(|op| *op > Op::Mod) {
-                        reduce(&mut ast, &mut operand_stack, op)?;
-                    }
-                    operator_stack.push(Op::Mod);
-                    state = ParserState::Unary;
-                }
-            },
+        while self.operand_stack.len() > 1 {
+            let op = self
+                .operator_stack
+                .pop()
+                .expect("Got empty operator stack (this should be impossible)");
+            reduce(&mut self.ast, &mut self.operand_stack, op)?;
+        }
+
+        // If you pass in no tokens, then an empty tree is what you'll get.
+        // No reason to noisily complain about it.
+        if let Some(root_key) = self.operand_stack.pop() {
+            self.ast.root = root_key;
+        }
+
+        Ok(self.ast)
+    }
+
+    fn unary(&mut self, tok: Token<'src>) {
+        match tok.ty {
+            name @ TokenType::Ident(_) => {
+                let k = self
+                    .ast
+                    .nodes
+                    .insert(ASTNode::leaf(ASTNodeType::Ident { name, ty: None }));
+                self.operand_stack.push(k);
+                self.state = ParserState::Binary;
+            }
+            lit @ TokenType::IntLit(_) => {
+                let k = self.ast.nodes.insert(ASTNode::leaf(ASTNodeType::Literal {
+                    val: lit,
+                    ty: Type::ComptimeInt,
+                }));
+                self.operand_stack.push(k);
+                self.state = ParserState::Binary;
+            }
+            lit @ TokenType::FloatLit(_) => {
+                let k = self.ast.nodes.insert(ASTNode::leaf(ASTNodeType::Literal {
+                    val: lit,
+                    ty: Type::ComptimeFloat,
+                }));
+                self.operand_stack.push(k);
+                self.state = ParserState::Binary;
+            }
+            lit @ TokenType::StrLit(_) => {
+                let k = self.ast.nodes.insert(ASTNode::leaf(ASTNodeType::Literal {
+                    val: lit,
+                    ty: Type::String,
+                }));
+                self.operand_stack.push(k);
+                self.state = ParserState::Binary;
+            }
+            TokenType::Minus => self.operator_stack.push(Op::Negate),
+            TokenType::LParen => self.operator_stack.push(Op::Group),
             _ => todo!(),
         }
     }
 
-    while operand_stack.len() > 1 {
-        let op = operator_stack.pop().ok_or(KumoError::new(
-            crate::error::ErrorType::OneOff("lol"),
-            crate::DebugInfo {
-                pos: 0,
-                line: 0,
-                col: 0,
-                len: 0,
-            },
-        ))?;
-        reduce(&mut ast, &mut operand_stack, op)?;
+    fn binary(&mut self, tok: Token<'src>) -> KumoResult<()> {
+        match tok.ty {
+            arith_op @ (TokenType::Plus
+            | TokenType::Minus
+            | TokenType::Star
+            | TokenType::Slash
+            | TokenType::Percent) => {
+                let tok_op = Op::bin_of_token(&arith_op);
+                while let Some(op) = self
+                    .operator_stack
+                    .pop_if(|op| *op > tok_op)
+                {
+                    reduce(&mut self.ast, &mut self.operand_stack, op)?;
+                }
+                self.operator_stack.push(tok_op);
+                self.state = ParserState::Unary;
+            }
+            TokenType::LParen => {
+                self.operator_stack.push(Op::Call);
+                self.state = ParserState::Unary;
+            }
+            _ => todo!(),
+        }
+
+        Ok(())
     }
-
-    dbg!(&operand_stack);
-    dbg!(&operator_stack);
-
-    // If you pass in no tokens, then an empty tree is what you'll get.
-    // No reason to noisily complain about it.
-    if let Some(root_key) = operand_stack.pop() {
-        ast.root = root_key;
-    }
-
-    Ok(ast)
 }
 
-fn reduce(
-    ast: &mut AST,
-    operand_stack: &mut Vec<DefaultKey>,
-    op: Op,
-) -> KumoResult<()> {
+// Maybe this should be a struct -- This would solve a lot of pointless
+// lifetime headache too.
+
+fn reduce(ast: &mut AST, operand_stack: &mut Vec<DefaultKey>, op: Op) -> KumoResult<()> {
     // Assuming left-associativity.
     // I don't know if it's remotely valuable to try to balance the AST.
     let op_args = operand_stack.drain((operand_stack.len() - op.arg_count())..);
@@ -285,7 +272,12 @@ impl Display for AST<'_> {
                 }
                 let node = &self.nodes[curr];
                 writeln!(f, "{:?}", node.ty)?;
-                traversal_stack.extend(self.args[node.args_start..node.args_end].iter().rev().map(|v| (depth + 1, *v)));
+                traversal_stack.extend(
+                    self.args[node.args_start..node.args_end]
+                        .iter()
+                        .rev()
+                        .map(|v| (depth + 1, *v)),
+                );
             }
 
             Ok(())
