@@ -127,7 +127,6 @@ impl Op {
     }
 }
 
-
 struct Parser<'src> {
     state: ParserState,
     ast: AST<'src>,
@@ -158,7 +157,7 @@ impl<'src> Parser<'src> {
                 .operator_stack
                 .pop()
                 .expect("Got empty operator stack (this should be impossible)");
-            reduce(&mut self.ast, &mut self.operand_stack, op)?;
+            self.reduce(op)?;
         }
 
         // If you pass in no tokens, then an empty tree is what you'll get.
@@ -218,11 +217,8 @@ impl<'src> Parser<'src> {
             | TokenType::Slash
             | TokenType::Percent) => {
                 let tok_op = Op::bin_of_token(&arith_op);
-                while let Some(op) = self
-                    .operator_stack
-                    .pop_if(|op| *op > tok_op)
-                {
-                    reduce(&mut self.ast, &mut self.operand_stack, op)?;
+                while let Some(op) = self.operator_stack.pop_if(|op| *op > tok_op) {
+                    self.reduce(op)?;
                 }
                 self.operator_stack.push(tok_op);
                 self.state = ParserState::Unary;
@@ -236,28 +232,30 @@ impl<'src> Parser<'src> {
 
         Ok(())
     }
+
+    fn reduce(&mut self, op: Op) -> KumoResult<()> {
+        // Assuming left-associativity.
+        // I don't know if it's remotely valuable to try to balance the AST.
+        let op_args = self
+            .operand_stack
+            .drain((self.operand_stack.len() - op.arg_count())..);
+        let args_start = self.ast.args.len();
+        self.ast.args.extend(op_args);
+        let args_end = self.ast.args.len();
+
+        let new_operand = self.ast.nodes.insert(ASTNode {
+            ty: ASTNodeType::Op { op },
+            args_start,
+            args_end,
+        });
+        self.operand_stack.push(new_operand);
+
+        Ok(())
+    }
 }
 
 // Maybe this should be a struct -- This would solve a lot of pointless
 // lifetime headache too.
-
-fn reduce(ast: &mut AST, operand_stack: &mut Vec<DefaultKey>, op: Op) -> KumoResult<()> {
-    // Assuming left-associativity.
-    // I don't know if it's remotely valuable to try to balance the AST.
-    let op_args = operand_stack.drain((operand_stack.len() - op.arg_count())..);
-    let args_start = ast.args.len();
-    ast.args.extend(op_args);
-    let args_end = ast.args.len();
-
-    let new_operand = ast.nodes.insert(ASTNode {
-        ty: ASTNodeType::Op { op },
-        args_start,
-        args_end,
-    });
-    operand_stack.push(new_operand);
-
-    Ok(())
-}
 
 impl Display for AST<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
