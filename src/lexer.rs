@@ -40,6 +40,9 @@ pub enum TokenType<'src> {
     LCurly,
     RCurly,
 
+    // Program Constructs
+    Func,
+
     // Misc
     Semicolon,
     Arrow,
@@ -201,7 +204,7 @@ impl<'iter, 'src: 'iter> Lexer<'iter, 'src> {
         self.token(TokenType::StrLit(str_lit)).unwrap()
     }
 
-    fn take_identifier(&mut self) -> KumoResult<Token<'src>> {
+    fn take_keyword_or_identifier(&mut self) -> KumoResult<Token<'src>> {
         let start = self.pos - 1;
         while let Some(c) = self.peek_char() {
             if !c.is_alphanumeric() && c != '_' {
@@ -212,7 +215,11 @@ impl<'iter, 'src: 'iter> Lexer<'iter, 'src> {
 
         let str_lit = str::from_utf8(&self.input[start..self.pos])
             .expect("We got misaligned here, not valid UTF-8. This should never happen.");
-        self.token(TokenType::Ident(str_lit)).unwrap()
+
+        match str_lit {
+            "func" => self.token(TokenType::Func).unwrap(),
+            s => self.token(TokenType::Ident(s)).unwrap(),
+        }
     }
 }
 
@@ -274,7 +281,7 @@ impl<'iter, 'src: 'iter> Iterator for Lexer<'iter, 'src> {
                 if c.is_numeric() {
                     Some(self.take_numeric_lit())
                 } else {
-                    Some(self.take_identifier())
+                    Some(self.take_keyword_or_identifier())
                 }
             }
         }

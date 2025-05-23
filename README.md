@@ -17,6 +17,8 @@ I think in terms of video/blog post content, I think the most valuable thing wou
 - So it's really just Fortran with region-based memory-management and some second-order logic in the type system.
 - I kind of hate the way arena allocators in Rust work (or maybe I'm getting skill-issued by them, they don't do that in C) so RBMM it is.
 - (scope-creep kickstarter stretch-goal) OpenMP-style parallel-for -- at this point you might as well target MLIR instead of rolling your own backend.
+- (ROUND TWO) PTX generation/`acc for` construct -- If we want to tie this in with GPUs then we'll have to tag regions with a "device" and make the runtime
+a little heaiver. Oh well, the spirit of this project is "anything that is interesting to compile."
 
 ### Pedagogical Goals
 
@@ -34,8 +36,8 @@ I think in terms of video/blog post content, I think the most valuable thing wou
 ### Target machine (since it affects backend decisions)
 
 - A home computer. Most simple optimizations happen to make the program smaller, but if we're feeling MOTIVATED we can do a little inlining.
-- Targeting x86 will be annoying though, since you get 4 ISA registers... bruh
-- Different register allocation strategies might be good.
+- Targeting x86 will be annoying though, since you get (effectively) 4 ISA registers... bruh
+- Different register allocation strategies might be good, are there any others besides graph-coloring/linear scan?
 
 ### Overview of Compiler:
 
@@ -43,9 +45,10 @@ I think in terms of video/blog post content, I think the most valuable thing wou
                  |--(opt)-||----(opt)---||----(opt)--|
 Source ---> AST -|-> TIR -||-> LinIaR --||-> MachIR -|-> ASM with infinite registers ---(reg alloc)--> Machine Code
 
-
 ```
-TIR: Typed AST -- We've inferred all types, which includes region parameters. More for correctness.
-LinIaR: SSA CFG+Regions -- Thing inspired by MLIR which has "ops with regions" -- we have a notion of a "for loop" in the IR, ladies and gentlemen.
-MachIR: SSA CFG -- we've removed all the "for-loop" ops at this point, tried-and-true optimizations start here.
+- TIR: Typed AST -- We've inferred all types, which includes region parameters. More for correctness.
+- LinIaR: SSA CFG+Regions -- Thing inspired by MLIR which has "ops with regions" -- we have a notion of a "for loop" in the IR, ladies and gentlemen.
+  - For PTX: LinIaR could also denote which loops are "GPU-able" or track GPU-specific details.
+  - We will have to modify the backend to generate GPU code too though, so we'll need a "device" tag on each function all the way down.
+- MachIR: SSA CFG -- we've removed all the "for-loop" ops at this point, tried-and-true optimizations start here.
 

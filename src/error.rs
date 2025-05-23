@@ -4,7 +4,7 @@ use crate::lexer::LexErrorType;
 
 pub type KumoResult<T> = Result<T, KumoError>;
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct DebugInfo {
     pub pos: usize,
     pub line: usize,

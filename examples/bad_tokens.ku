@@ -1,4 +1,4 @@
-real :: (x: nat, y: nat) {
-    x + "hey;
-    y * "bro;
+real :: func(x: nat, y: nat) {
+    x + "hey";
+    y * "bro";
 }

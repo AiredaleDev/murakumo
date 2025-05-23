@@ -1,7 +1,8 @@
 use slotmap::{DefaultKey, Key, SlotMap};
+use smallvec::SmallVec;
 use std::fmt::Display;
 
-use crate::{KumoError, KumoResult, Token, lexer::TokenType};
+use crate::{KumoError, KumoResult, Token, error::ErrorType, lexer::TokenType};
 
 // I wanted to use `Bump` and have AST nodes store mutables references to/boxed slices pointing into the `Bump`,
 // but I couldn't quite convince the borrow-checker that
@@ -10,22 +11,19 @@ use crate::{KumoError, KumoResult, Token, lexer::TokenType};
 pub struct AST<'src> {
     pub nodes: SlotMap<DefaultKey, ASTNode<'src>>,
     pub root: DefaultKey,
-    pub args: Vec<DefaultKey>,
 }
 
 #[derive(Debug)]
 pub struct ASTNode<'src> {
     ty: ASTNodeType<'src>,
-    args_start: usize,
-    args_end: usize,
+    args: SmallVec<[DefaultKey; 4]>,
 }
 
 impl<'src> ASTNode<'src> {
     fn leaf(ty: ASTNodeType<'src>) -> Self {
         Self {
             ty,
-            args_start: 0,
-            args_end: 0,
+            args: SmallVec::new(),
         }
     }
 }
@@ -77,13 +75,15 @@ enum ParserState {
     Binary,
 }
 
+// The current crux of the problem is that decl > assign. So we can't have a "group of decls".
+// This parser also can't handle different "contexts" (although the language's grammar is
+// context-free, lol) because it's trying to parse everything as an expression.
+
 // The order of the enum fields defines operator precedence.
 // Appears later -> binds tighter (closer to leaves).
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum Op {
-    // Chain of semicolon delimeted expressions/stmts.
-    // During reduction, these are folded into each other
-    // so function bodies don't form linked lists and can be walked quickly.
+    // Regions of code delimited by two curly braces.
     Block,
     // I claim that these too are binops!
     Decl,
@@ -91,10 +91,12 @@ enum Op {
     // The second colon in `::`
     Define,
 
-    // A chain of comma-separated nodes (hence why it's not called "comma."
-    // Similar to semicolons
-    Seq,
+    // Admits a `Group` of `Decl`s (params), a return type or another `Group` of `Decl`s and a `Block`.
+    Func,
+
+    // For `()` in arithmetic and procedure literals.
     Group,
+    SeqSep,
 
     // Arithmetic
     Subtract,
@@ -110,7 +112,9 @@ enum Op {
 impl Op {
     fn arg_count(&self) -> usize {
         match self {
+            Self::Group | Self::Block | Self::SeqSep => 0, // Denotes variadic length.
             Self::Negate => 1,
+            Self::Func => 3, // Params, Returns, Block
             _ => 2,
         }
     }
@@ -157,7 +161,7 @@ impl<'src> Parser<'src> {
                 .operator_stack
                 .pop()
                 .expect("Got empty operator stack (this should be impossible)");
-            self.reduce(op)?;
+            self.reduce_top_op(op)?;
         }
 
         // If you pass in no tokens, then an empty tree is what you'll get.
@@ -203,9 +207,11 @@ impl<'src> Parser<'src> {
                 self.operand_stack.push(k);
                 self.state = ParserState::Binary;
             }
+            TokenType::Func => self.operator_stack.push(Op::Func),
             TokenType::Minus => self.operator_stack.push(Op::Negate),
             TokenType::LParen => self.operator_stack.push(Op::Group),
-            _ => todo!(),
+            // TODO: return error instead of panicking.
+            t => panic!("idk what {t:?} is in unary state!"),
         }
     }
 
@@ -217,8 +223,9 @@ impl<'src> Parser<'src> {
             | TokenType::Slash
             | TokenType::Percent) => {
                 let tok_op = Op::bin_of_token(&arith_op);
-                while let Some(op) = self.operator_stack.pop_if(|op| *op > tok_op) {
-                    self.reduce(op)?;
+                // Left-associative.
+                while let Some(op) = self.operator_stack.pop_if(|op| *op >= tok_op) {
+                    self.reduce_top_op(op)?;
                 }
                 self.operator_stack.push(tok_op);
                 self.state = ParserState::Unary;
@@ -227,35 +234,94 @@ impl<'src> Parser<'src> {
                 self.operator_stack.push(Op::Call);
                 self.state = ParserState::Unary;
             }
-            _ => todo!(),
+            TokenType::Comma => {
+                // Right-associative -- yes, this _does_ matter. 
+                while let Some(op) = self.operator_stack.pop_if(|op| *op > Op::SeqSep) {
+                    self.reduce_top_op(op)?;
+                }
+                self.operator_stack.push(Op::SeqSep);
+                self.state = ParserState::Unary;
+            }
+            TokenType::RParen => {
+                while let Some(op) = self.operator_stack.pop_if(|op| *op > Op::SeqSep) {
+                    self.reduce_top_op(op)?;
+                }
+                self.reduce_sequence(Op::Group)?;
+                self.state = ParserState::Unary;
+            }
+            // TODO: return error instead of panicking.
+            t => panic!("idk what {t:?} is in binary state!"),
         }
 
         Ok(())
     }
 
-    fn reduce(&mut self, op: Op) -> KumoResult<()> {
-        // Assuming left-associativity.
+    // For operands with fixed arity ONLY.
+    fn reduce_top_op(&mut self, op: Op) -> KumoResult<()> {
         // I don't know if it's remotely valuable to try to balance the AST.
-        let op_args = self
+        // Maybe a peephole optimizer might be able to swap instructions out?
+        let args = self
             .operand_stack
-            .drain((self.operand_stack.len() - op.arg_count())..);
-        let args_start = self.ast.args.len();
-        self.ast.args.extend(op_args);
-        let args_end = self.ast.args.len();
+            .drain((self.operand_stack.len() - op.arg_count())..)
+            .collect();
 
         let new_operand = self.ast.nodes.insert(ASTNode {
             ty: ASTNodeType::Op { op },
-            args_start,
-            args_end,
+            args,
         });
         self.operand_stack.push(new_operand);
 
         Ok(())
     }
-}
 
-// Maybe this should be a struct -- This would solve a lot of pointless
-// lifetime headache too.
+    // Assumes fully reduced elems, i.e.
+    // -ators: ... parent_op Seq^(arity)
+    // -ands: ... elem_1, elem_2, ... elem_arity
+    fn reduce_sequence(&mut self, parent_op: Op) -> KumoResult<()> {
+        let mut args = SmallVec::new();
+        loop {
+            match self.operator_stack.pop() {
+                Some(Op::SeqSep) => {
+                    let seq_elem = self.operand_stack.pop().ok_or(KumoError::new(
+                        ErrorType::OneOff("what the hell oh my god no wayayayay"),
+                        crate::DebugInfo::default(),
+                    ))?;
+                    args.push(seq_elem);
+                }
+                Some(op) if op == parent_op => {
+                    let seq_elem = self.operand_stack.pop().ok_or(KumoError::new(
+                        ErrorType::OneOff("what the hell oh my god no wayayayay"),
+                        crate::DebugInfo::default(),
+                    ))?;
+                    args.push(seq_elem);
+                    args.reverse();
+                    let finalized_seq_node = self.ast.nodes.insert(ASTNode {
+                        ty: ASTNodeType::Op { op },
+                        args,
+                    });
+                    self.operand_stack.push(finalized_seq_node);
+                    break;
+                }
+                Some(op) => {
+                    // I really gotta rethink how I do error handling...
+                    dbg!(op);
+                    return Err(KumoError::new(
+                        ErrorType::OneOff("Unexpected op in arg list."),
+                        crate::DebugInfo::default(),
+                    ));
+                }
+                None => {
+                    return Err(KumoError::new(
+                        ErrorType::OneOff("Unbalanced bracket"),
+                        crate::DebugInfo::default(),
+                    ));
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
 
 impl Display for AST<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -270,12 +336,7 @@ impl Display for AST<'_> {
                 }
                 let node = &self.nodes[curr];
                 writeln!(f, "{:?}", node.ty)?;
-                traversal_stack.extend(
-                    self.args[node.args_start..node.args_end]
-                        .iter()
-                        .rev()
-                        .map(|v| (depth + 1, *v)),
-                );
+                traversal_stack.extend(node.args.iter().rev().map(|v| (depth + 1, *v)));
             }
 
             Ok(())
