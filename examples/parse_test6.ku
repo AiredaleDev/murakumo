@@ -1,0 +1,1 @@
+(x: int, y: float, z: real, w: T)

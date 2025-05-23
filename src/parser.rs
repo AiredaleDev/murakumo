@@ -86,7 +86,6 @@ enum Op {
     // Regions of code delimited by two curly braces.
     Block,
     // I claim that these too are binops!
-    Decl,
     Assign,
     // The second colon in `::`
     Define,
@@ -97,6 +96,9 @@ enum Op {
     // For `()` in arithmetic and procedure literals.
     Group,
     SeqSep,
+
+    // We need Decl < SeqSep < Group < Define <= Assign
+    Decl,
 
     // Arithmetic
     Subtract,
@@ -126,6 +128,7 @@ impl Op {
             TokenType::Star => Op::Multiply,
             TokenType::Slash => Op::Divide,
             TokenType::Percent => Op::Mod,
+            TokenType::Colon => Op::Decl,
             _ => unreachable!(),
         }
     }
@@ -217,11 +220,13 @@ impl<'src> Parser<'src> {
 
     fn binary(&mut self, tok: Token<'src>) -> KumoResult<()> {
         match tok.ty {
+            // `Decl` is not an arithmetic operator but it sure parses like one
             arith_op @ (TokenType::Plus
             | TokenType::Minus
             | TokenType::Star
             | TokenType::Slash
-            | TokenType::Percent) => {
+            | TokenType::Percent
+            | TokenType::Colon) => {
                 let tok_op = Op::bin_of_token(&arith_op);
                 // Left-associative.
                 while let Some(op) = self.operator_stack.pop_if(|op| *op >= tok_op) {
