@@ -4,7 +4,7 @@ add :: (x: int, y: int) -> int {
 
 main :: () {
     // Tells you how it is.
-    print("sup bitches");
+    print("no lie.");
     print("da sum is: ", add(30, 12));
     30e2; 15; "what if you had a gun"; 10.5
 }

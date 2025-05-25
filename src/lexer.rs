@@ -6,9 +6,11 @@ use std::{fmt::Display, marker::PhantomData};
 use crate::{DebugInfo, KumoError, KumoResult, error::ErrorType};
 
 // f64s are not Eq -- NaN != NaN :(
+// We might want to defer parsing integer and float literals until later.
 #[derive(Debug, Clone, PartialEq)]
 pub enum TokenType<'src> {
     // Literals
+    UnitLit, // Never constructed in this module, see parser.
     IntLit(i64),
     FloatLit(f64),
     Ident(&'src str),

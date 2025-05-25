@@ -1,0 +1,4 @@
+main :: (x: int, y: f32, z: f64, w: T, v: Dual) {
+    "ok";
+    print("swag")
+}
