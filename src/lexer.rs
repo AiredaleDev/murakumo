@@ -58,6 +58,7 @@ pub enum TokenType<'src> {
 #[derive(Debug, Default)]
 pub struct Token<'src> {
     pub ty: TokenType<'src>,
+    pub pos: usize,
     pub line: usize,
     pub col: usize,
 }
@@ -94,6 +95,7 @@ impl<'iter, 'src: 'iter> Lexer<'iter, 'src> {
     fn token(&self, ty: TokenType<'src>) -> Option<KumoResult<Token<'src>>> {
         Some(Ok(Token {
             ty,
+            pos: self.pos,
             line: self.line,
             col: self.col,
         }))

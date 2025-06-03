@@ -1,3 +1,4 @@
+use crate::Token;
 use std::{fmt::Display, path::Path};
 
 pub type KumoResult<T> = Result<T, KumoError>;
@@ -8,6 +9,23 @@ pub struct DebugInfo {
     pub line: usize,
     pub col: usize,
     pub len: usize,
+}
+
+impl From<&Token<'_>> for DebugInfo {
+    fn from(value: &Token<'_>) -> Self {
+        use crate::lexer::TokenType;
+        let len = match value.ty {
+            TokenType::Ident(i) => i.len(),
+            _ => 1,
+        };
+
+        Self {
+            pos: value.pos,
+            line: value.line,
+            col: value.col,
+            len,
+        }
+    }
 }
 
 // TODO: Fix this stupid nonsense so I can accumulate errors into one big list

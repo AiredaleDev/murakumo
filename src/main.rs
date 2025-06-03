@@ -18,7 +18,7 @@ struct Args {
 
 fn compile(input: &str) -> KumoResult<()> {
     let tokens = lex(input)?;
-    // println!("{tokens:#?}");
+    println!("{tokens:#?}");
     let ast = parse(tokens)?;
     println!("{ast}");
     Ok(())
