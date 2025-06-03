@@ -4,5 +4,5 @@ main :: () {
     // Tells you how it is.
     print("we fly high");
     print("da sum is: ", a + b);
-    30e2; 15; "road to 50 followers"; 10.5;
+    30e2; 15; "road to 50 followers"; 10.5
 }

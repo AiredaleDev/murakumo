@@ -1,15 +1,16 @@
 // We don't have to support arbitrary precision integers if we don't want to
 // Now this code REALLY never allocates :)
 // use rug::Integer;
-use std::{fmt::Display, marker::PhantomData};
+use std::marker::PhantomData;
 
-use crate::{DebugInfo, KumoError, KumoResult, error::ErrorType};
+use crate::{DebugInfo, KumoError, KumoResult};
 
 // f64s are not Eq -- NaN != NaN :(
 // We might want to defer parsing integer and float literals until later.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub enum TokenType<'src> {
     // Literals
+    #[default]
     UnitLit, // Never constructed in this module, see parser.
     IntLit(i64),
     FloatLit(f64),
@@ -54,7 +55,7 @@ pub enum TokenType<'src> {
 }
 
 // We'll copy debug info into the AST and use something like a slotmap to store each node.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Token<'src> {
     pub ty: TokenType<'src>,
     pub line: usize,
@@ -156,7 +157,7 @@ impl<'iter, 'src: 'iter> Lexer<'iter, 'src> {
         }
 
         let whoops = KumoError::new(
-            LexErrorType::BadNumericLiteral,
+            BAD_NUMERIC_LITERAL.into(),
             DebugInfo {
                 pos: start,
                 line: self.line,
@@ -188,7 +189,7 @@ impl<'iter, 'src: 'iter> Lexer<'iter, 'src> {
 
             if self.pos == self.input.len() || c == '\n' {
                 return Err(KumoError::new(
-                    LexErrorType::UndelimitedString,
+                    UNDELIMITED_STRING.into(),
                     DebugInfo {
                         pos: start,
                         line: self.line,
@@ -290,23 +291,5 @@ impl<'iter, 'src: 'iter> Iterator for Lexer<'iter, 'src> {
     }
 }
 
-#[derive(Debug)]
-pub enum LexErrorType {
-    BadNumericLiteral,
-    UndelimitedString,
-}
-
-impl Display for LexErrorType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::BadNumericLiteral => write!(f, "Bad numeric literal"),
-            Self::UndelimitedString => write!(f, "Found undelimited string"),
-        }
-    }
-}
-
-impl From<LexErrorType> for ErrorType {
-    fn from(value: LexErrorType) -> Self {
-        ErrorType::Lexer(value)
-    }
-}
+const BAD_NUMERIC_LITERAL: &str = "Bad numeric literal";
+const UNDELIMITED_STRING: &str = "Found undelimited string";

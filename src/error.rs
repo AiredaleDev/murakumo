@@ -1,7 +1,5 @@
 use std::{fmt::Display, path::Path};
 
-use crate::lexer::LexErrorType;
-
 pub type KumoResult<T> = Result<T, KumoError>;
 
 #[derive(Debug, Default)]
@@ -12,26 +10,19 @@ pub struct DebugInfo {
     pub len: usize,
 }
 
-// All this does is aggregate the error variants so I can
-// split up error-handling across modules. That's it.
-#[derive(Debug)]
-pub enum ErrorType {
-    Lexer(LexErrorType),
-    OneOff(&'static str),
-}
+// TODO: Fix this stupid nonsense so I can accumulate errors into one big list
+// and remove the distinction between them.
+// If I need to reuse an error in a module I'll just make it a const.
 
 #[derive(Debug)]
 pub struct KumoError {
-    ty: ErrorType,
+    msg: String,
     info: DebugInfo,
 }
 
 impl KumoError {
-    pub fn new(ty: impl Into<ErrorType>, info: DebugInfo) -> Self {
-        Self {
-            ty: ty.into(),
-            info,
-        }
+    pub fn new(msg: String, info: DebugInfo) -> Self {
+        Self { msg, info }
     }
 }
 
@@ -39,10 +30,7 @@ impl Display for KumoError {
     // I want a compile-time union of these things :/
     // I might revisit making this into a trait later.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match &self.ty {
-            ErrorType::Lexer(lex) => write!(f, "{lex}"),
-            ErrorType::OneOff(msg) => write!(f, "{msg}"),
-        }
+        write!(f, "{}", self.msg)
     }
 }
 

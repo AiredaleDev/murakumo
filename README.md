@@ -1,12 +1,10 @@
-# Murakumo -- A Cyclone-Inspired, Region-Based Systems Language for the curious, motivated undergraduate/self-taught programmer.
-
-I might want to change the name of this, since the first result is a warship even though its literal meaning is "gathering clouds," which fits the weather theme.
+# Murakumo -- A Cyclone-Inspired, Region-Based Systems Language
 
 I conceived of this language both as a fun exercise in looking at this [old paper](https://www.cs.umd.edu/projects/cyclone/papers/cyclone-regions.pdf) and to make a Youtube tutorial series on compiler construction.
 
-Everything except the parser and some useful data structures are hand-written. I want to teach a curious viewer the basics of compiler construction, with a focus on optimization and code-generation, only mentioning enough type theory to make programming in the language nicer. If they want to learn LLVM, they can read Kaleidoscope as a starting point.
+I want to focus on optimization and code-generation, only mentioning enough type theory to make programming in the language nicer. If they want to learn LLVM, they can read Kaleidoscope as a starting point.
 
-I think in terms of video/blog post content, I think the most valuable thing would be to present certain *algorithms* as opposed to code, as well as my thought process for tricky parts.
+In terms of video/blog post content, I think the most valuable thing would be to present certain *algorithms* as opposed to code, as well as my thought process for tricky parts. I implement some parts, like the lexer, parser, and AST in an unorthodox way (at least for Rust) because I _think_ it will yield tigher bounds on performance. The lexer is guaranteed not to allocate anything other than the final `Vec` on the happy path and only allocate the string for the error on the failing path. The AST is built using slotmaps to get the compactness of an arena allocator with the memory re-use of a pool/malloc (AST rewrites often involve replacing nodes wholesale).
 
 ### Language Features
 
@@ -17,7 +15,7 @@ I think in terms of video/blog post content, I think the most valuable thing wou
 - So it's really just Fortran with region-based memory-management and some second-order logic in the type system.
 - I kind of hate the way arena allocators in Rust work (or maybe I'm getting skill-issued by them, they don't do that in C) so RBMM it is.
 - (scope-creep kickstarter stretch-goal) OpenMP-style parallel-for -- at this point you might as well target MLIR instead of rolling your own backend.
-- (ROUND TWO) PTX generation/`acc for` construct -- If we want to tie this in with GPUs then we'll have to tag regions with a "device" and make the runtime
+- (ROUND TWO) PTX/ROCm/OpenCL generation with an `acc for` construct -- If we want to tie this in with GPUs then we'll have to tag regions with a "device" and make the runtime
 a little heaiver. Oh well, the spirit of this project is "anything that is interesting to compile."
 
 ### Pedagogical Goals
@@ -36,15 +34,14 @@ a little heaiver. Oh well, the spirit of this project is "anything that is inter
 ### Target machine (since it affects backend decisions)
 
 - A home computer. Most simple optimizations happen to make the program smaller, but if we're feeling MOTIVATED we can do a little inlining.
-- Targeting x86 will be annoying though, since you get (effectively) 4 ISA registers... bruh
+- Targeting x86 will be annoying though, since you get very few ISA registers... bruh
 - Different register allocation strategies might be good, are there any others besides graph-coloring/linear scan?
 
 ### Overview of Compiler:
 
 ```
-                 |--(opt)-||----(opt)---||----(opt)--|
-Source ---> AST -|-> TIR -||-> LinIaR --||-> MachIR -|-> ASM with infinite registers ---(reg alloc)--> Machine Code
-
+                 |--(opt)-||----(opt)---||----(opt)--||---------(i-sched passes)-------|
+Source ---> AST -|-> TIR -||-> LinIaR --||-> MachIR -||-> ASM with infinite registers -|--(reg alloc)--> Machine Code
 ```
 - TIR: Typed AST -- We've inferred all types, which includes region parameters. More for correctness.
 - LinIaR: SSA CFG+Regions -- Thing inspired by MLIR which has "ops with regions" -- we have a notion of a "for loop" in the IR, ladies and gentlemen.
