@@ -96,15 +96,13 @@ enum ParserState {
 
 // The order of the enum fields defines operator precedence.
 // Appears later -> binds tighter (closer to leaves).
-// NOTE: This shit really gets unintuitive after extending it beyond the initial
-// expression-parsing use case...
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum ExprOp {
+    // Admits a `Group` of `Decl`s (params), a return type or another `Group` of `Decl`s and a `Block`.
+    Func,
     // Regions of code delimited by two curly braces.
     Block,
     AndThen,
-    // Admits a `Group` of `Decl`s (params), a return type or another `Group` of `Decl`s and a `Block`.
-    Func,
 
     // For `()` in arithmetic and procedure literals.
     Group,
@@ -155,7 +153,6 @@ struct Parser<'src> {
 }
 
 // NOTE: Unstable :(
-// I love existential types
 // type TokIter<'src> = impl Iterator<Item = Token<'src>>;
 
 impl<'src> Parser<'src> {
@@ -168,29 +165,18 @@ impl<'src> Parser<'src> {
         }
     }
 
+    // module ::= stmt*
+    // Each file implicitly declares a new module. This is the only way
+    // to create new modules.
     fn parse_module(
         &mut self,
         tokens: &mut MultiPeek<impl Iterator<Item = Token<'src>>>,
     ) -> KumoResult<DefaultKey> {
         let mut stmts = SmallVec::new();
-        while !matches!(
-            tokens.peek(),
-            Some(Token {
-                ty: TokenType::RCurly,
-                ..
-            }) | None
-        ) {
+        while tokens.peek().is_some() {
             stmts.push(self.parse_stmt(tokens, &[TokenType::Semicolon, TokenType::RCurly])?);
-            // Want to eat semicolons but leave RCurly so we know when to stop
-            if matches!(
-                tokens.peek(),
-                Some(Token {
-                    ty: TokenType::Semicolon,
-                    ..
-                })
-            ) {
-                tokens.next();
-            }
+            // Eat semicolons and right curly braces that come your way.
+            tokens.next();
         }
 
         Ok(self.ast.nodes.insert(ASTNode {
@@ -245,7 +231,7 @@ impl<'src> Parser<'src> {
             }
         }
 
-        eprintln!("[PARSE_BLOCK]: stmts = {stmts:?}");
+        // eprintln!("[PARSE_BLOCK]: stmts = {stmts:?}");
         Ok(self.ast.nodes.insert(ASTNode {
             ty: ASTNodeType::Expr(ExprOp::Block),
             args: stmts,
@@ -281,7 +267,7 @@ impl<'src> Parser<'src> {
         };
 
         if matches!(tokens.peek(), Some(Token{ ty, ..}) if stop_at.iter().all(|s| s != ty)) {
-            eprintln!("!!! ENTERING EXPR IN STMT");
+            // eprintln!("!!! ENTERING EXPR IN STMT");
             args.push(self.parse_expr(tokens, stop_at)?);
         }
 
@@ -364,15 +350,16 @@ impl<'src> Parser<'src> {
         let operator_stack_check = self.operator_stack.len();
 
         let mut curr_state = ParserState::Unary;
-        eprintln!("!!! WILL STOP on {:?}", stop_at);
+        // eprintln!("!!! WILL STOP on {:?}", stop_at);
         loop {
             match tokens.peek() {
                 Some(Token { ty, .. }) if stop_at.iter().all(|tty| ty != tty) => {
-                    eprintln!("!!! Upcoming token: {:?}", ty);
+                    // eprintln!("!!! Upcoming token: {:?}", ty);
                 }
                 _ => break,
             }
 
+            /*
             dbg!(&curr_state);
             eprintln!("-ators: {:?}", &self.operator_stack[operator_stack_check..]);
             eprint!("-ands: ");
@@ -380,6 +367,7 @@ impl<'src> Parser<'src> {
                 eprint!("{:?} ", &self.ast.nodes[*and]);
             }
             eprintln!();
+            */
 
             curr_state = match curr_state {
                 ParserState::Unary => self.unary_expr(tokens)?,
@@ -387,18 +375,20 @@ impl<'src> Parser<'src> {
             }
         }
 
+        /*
         eprintln!("-ators: {:?}", &self.operator_stack[operator_stack_check..]);
-        // eprintln!("Keys -> Nodes:\n{:#?}", self.ast.nodes);
-
         for n in &self.ast.nodes {
             eprintln!("{n:?}");
         }
+        */
 
         while self.operand_stack.len() > operand_stack_check + 1 {
+            /*
             for and in &self.operand_stack[operand_stack_check..] {
                 eprint!("{:?} ", &self.ast.nodes[*and]);
             }
             eprintln!();
+            */
 
             let op = self.operator_stack.pop().expect(
                 "Got empty operator stack (this should be impossible) -- \
@@ -407,7 +397,7 @@ impl<'src> Parser<'src> {
             self.reduce_top_op(op)?;
         }
 
-        eprintln!("!!! Trying to pop that last one...");
+        // eprintln!("!!! Trying to pop that last one...");
         self.operand_stack
             .pop()
             .ok_or_else(|| KumoError::new(END_OF_STREAM.into(), DebugInfo::default()))
@@ -427,7 +417,7 @@ impl<'src> Parser<'src> {
         }
 
         let tok = tokens.next().unwrap();
-        dbg!(&tok);
+        // dbg!(&tok);
 
         let next_state = match tok.ty {
             name @ TokenType::Ident(_) => {
@@ -532,7 +522,7 @@ impl<'src> Parser<'src> {
         }
 
         let tok = tokens.next().unwrap();
-        dbg!(&tok);
+        // dbg!(&tok);
 
         let next_state = match tok.ty {
             // `Decl` is not an arithmetic operator but it sure parses like one
@@ -589,12 +579,14 @@ impl<'src> Parser<'src> {
                 // effectively deleting it. No good for our use-case.
                 loop {
                     match tokens.peek().map(|t| &t.ty) {
-                        Some(TokenType::Comma | TokenType::RParen | TokenType::Semicolon) | None => break,
+                        Some(TokenType::Comma | TokenType::RParen | TokenType::Semicolon)
+                        | None => break,
                         _ => {}
                     }
                     stmt_toks.push(tokens.next().unwrap());
                 }
 
+                /*
                 eprintln!(
                     "[PARSE_EXPR]: Going to parse colon rhs with: {:?}",
                     stmt_toks
@@ -603,19 +595,13 @@ impl<'src> Parser<'src> {
                     "[PARSE_EXPR]: Before then, next token to munch: {:?}",
                     tokens.peek()
                 );
+                */
                 let decl_key = self.parse_stmt(
                     &mut multipeek(stmt_toks),
                     &[TokenType::Comma, TokenType::RParen, TokenType::Semicolon],
                 )?;
 
                 self.operand_stack.push(decl_key);
-                /*
-                match tokens.peek().map(|t| &t.ty) {
-                    // TODO: Might need to add more cases to this.
-                    Some(TokenType::Comma) => ParserState::Binary,
-                    _ => ParserState::Unary
-                }
-                */
                 // Why not go into binary state? Let's find out.
                 ParserState::Binary
             }
@@ -691,8 +677,8 @@ impl<'src> Parser<'src> {
     fn reduce_top_op(&mut self, op: ExprOp) -> KumoResult<()> {
         // I don't know if it's remotely valuable to try to balance the AST.
         // Maybe a peephole optimizer might be able to swap instructions out?
-        dbg!(&op);
-        dbg!(self.operand_stack.len());
+        // dbg!(&op);
+        // dbg!(self.operand_stack.len());
         let args = self
             .operand_stack
             .drain((self.operand_stack.len() - op.arg_count())..)
@@ -702,9 +688,9 @@ impl<'src> Parser<'src> {
             ty: ASTNodeType::Expr(op),
             args,
         });
-        dbg!(&self.ast.nodes[new_operand]);
+        // dbg!(&self.ast.nodes[new_operand]);
         self.operand_stack.push(new_operand);
-        dbg!(self.operand_stack.len());
+        // dbg!(self.operand_stack.len());
 
         Ok(())
     }
@@ -716,10 +702,10 @@ impl<'src> Parser<'src> {
     fn reduce_sequence(&mut self, parent_ops: &[ExprOp], seqsep: ExprOp) -> KumoResult<()> {
         let mut args = SmallVec::new();
         loop {
-            dbg!(&self.operator_stack);
+            // dbg!(&self.operator_stack);
             let stack_top = self.operator_stack.pop();
-            dbg!(&stack_top);
-            dbg!(&seqsep);
+            // dbg!(&stack_top);
+            // dbg!(&seqsep);
             match stack_top {
                 Some(op) if op == seqsep => {
                     // TODO: Transfer debug info to AST nodes.
@@ -759,7 +745,7 @@ impl<'src> Parser<'src> {
                 Some(op) => {
                     // TODO: I really gotta rethink how I do error handling...
                     // Is this fine?
-                    dbg!(op);
+                    // dbg!(op);
                     return Err(KumoError::new(
                         "Unexpected op in arg list.".into(),
                         DebugInfo::default(),

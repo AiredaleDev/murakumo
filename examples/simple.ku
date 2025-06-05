@@ -1,3 +1,5 @@
+sus :: 10;
+
 add :: (x: int, y: int) -> int {
     x + y
 }
@@ -6,5 +8,5 @@ main :: () {
     // Tells you how it is.
     print("no lie.");
     print("da sum is: ", add(30, 12));
-    30e2; 15; "what if you had a gun"; 10.5
+    30e2; 15; "how peculiar"; 10.5
 }
