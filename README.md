@@ -2,7 +2,7 @@
 
 I conceived of this language both as a fun exercise in looking at this [old paper](https://www.cs.umd.edu/projects/cyclone/papers/cyclone-regions.pdf) and to make a Youtube tutorial series on compiler construction.
 
-I want to focus on optimization and code-generation, only mentioning enough type theory to make programming in the language nicer. If they want to learn LLVM, they can read Kaleidoscope as a starting point.
+I want to focus on optimization and code-generation, only mentioning enough type theory to make programming in the language nicer. If one wants to learn LLVM, read [Kaleidoscope](https://llvm.org/docs/tutorial/) as a starting point.
 
 In terms of video/blog post content, I think the most valuable thing would be to present certain *algorithms* as opposed to code, as well as my thought process for tricky parts. I implement some parts, like the lexer, parser, and AST in an unorthodox way (at least for Rust) because I _think_ it will yield tigher bounds on performance. The lexer is guaranteed not to allocate anything other than the final `Vec` on the happy path and only allocate the string for the error on the failing path. The AST is built using slotmaps to get the compactness of an arena allocator with the memory re-use of a pool/malloc (AST rewrites often involve replacing nodes wholesale).
 
@@ -23,7 +23,7 @@ a little heaiver. Oh well, the spirit of this project is "anything that is inter
 - Do something more interesting than just the textbook compiler for some C or Fortran-like language (hence region-based memory management even though it's only as good of an idea as programming in Rust xd)
   - Also towards this end, introduce polyhedral loop optimization which motivated the creation of MLIR
 - Be classical (cover all the great optimizations that have been with us since the 70s) but give the viewer a taste of something a little more interesting.
-- Highlight some good Rust crates that make programming in it and achieving the performance a non-GC language should have much easier (e.g. slotmap) 
+- Highlight some good Rust crates that make programming in it and achieving the performance a non-GC language should have much easier (e.g. slotmap)
 - Make a suite of solid benchmark programs so we can measure if our optmizations are actually doing something.
 
 ### The IR
