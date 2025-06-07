@@ -1,86 +1,13 @@
 use multipeek::{MultiPeek, multipeek};
-use slotmap::{DefaultKey, Key, SlotMap};
+use slotmap::{DefaultKey, Key};
 use smallvec::{SmallVec, smallvec};
 use std::fmt::Display;
 
-use crate::{DebugInfo, KumoError, KumoResult, Token, lexer::TokenType};
-
-#[derive(Debug, Default)]
-pub struct AST<'src> {
-    pub nodes: SlotMap<DefaultKey, ASTNode<'src>>,
-    pub root: DefaultKey,
-}
-
-#[derive(Debug)]
-pub struct ASTNode<'src> {
-    ty: ASTNodeType<'src>,
-    // Tuples (including those in function defns and calls) as
-    // well as blocks will likely end up on the heap.
-    args: SmallVec<[DefaultKey; 3]>,
-}
-
-impl<'src> ASTNode<'src> {
-    fn leaf(ty: ASTNodeType<'src>) -> Self {
-        Self {
-            ty,
-            args: SmallVec::new(),
-        }
-    }
-}
-
-#[derive(Debug)]
-enum Type {
-    // For type inference.
-    Hole,
-    Unit,
-    // Arbitrary precision integers, with a notion of "packed struct."
-    // In non-packed environments, APInts are rounded up to their word-aligned
-    // size.
-    Int { size: usize, signed: bool },
-    // Maybe we should constrain the set of possible float sizes?
-    Float { size: usize },
-    String,
-    // `Comptime` types assume max(sizeof(their value), use)
-    // This is done for convenience -- they're comptime-known, so they're
-    // inline or looked-up immediately and constant-propagated.
-    // At the end of type inference, if a value is still "comptime...", the value assumes the
-    // default type (`int` = Int { size = 64, signed = true }, `float` = Float { size = 64 })
-    ComptimeInt,
-    ComptimeFloat,
-    // TODO: better key type, decide this with the env type. Perhaps yet more slotmaps
-    // are the answer!
-    Custom(String),
-}
-
-impl Type {
-    fn from_str(raw: &str) -> Self {
-        match raw {
-            "int" => Type::Int {
-                size: 64,
-                signed: true,
-            },
-            "nat" => Type::Int {
-                size: 64,
-                signed: false,
-            },
-            "unit" => Type::Unit,
-            "f32" => Type::Float { size: 32 },
-            "f64" => Type::Float { size: 64 },
-            name => Type::Custom(name.into()),
-        }
-    }
-}
-
-// NOTE: Maybe Decl should be its own category of node.
-#[derive(Debug)]
-enum ASTNodeType<'src> {
-    Ident(TokenType<'src>),
-    Literal { val: TokenType<'src>, ty: Type },
-    Type(Type),
-    Expr(ExprOp),
-    Stmt(StmtOp),
-    Module,
-}
+use crate::{
+    AST, ASTNode, DebugInfo, KumoError, KumoResult, Token,
+    ast::{ASTNodeType, ExprOp, StmtOp, Type},
+    lexer::TokenType,
+};
 
 pub fn parse(tokens: Box<[Token]>) -> KumoResult<AST> {
     let mut p = Parser::new();
@@ -92,58 +19,6 @@ pub fn parse(tokens: Box<[Token]>) -> KumoResult<AST> {
 enum ParserState {
     Unary,
     Binary,
-}
-
-// The order of the enum fields defines operator precedence.
-// Appears later -> binds tighter (closer to leaves).
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
-enum ExprOp {
-    // Admits a `Group` of `Decl`s (params), a return type or another `Group` of `Decl`s and a `Block`.
-    Func,
-    // Regions of code delimited by two curly braces.
-    Block,
-    AndThen,
-
-    // For `()` in arithmetic and procedure literals.
-    Group,
-    Call,
-    SeqSep,
-
-    // Decl is the first colon in `name: tau`, `name := v`, `name :: v`, `name: tau = v`, etc.
-    // We need Decl > SeqSep > Group to build procedure parameter lists.
-    Decl,
-
-    // Arithmetic
-    Subtract,
-    Add,
-    Divide,
-    Multiply,
-    Mod,
-    Negate,
-}
-
-impl ExprOp {
-    fn arg_count(&self) -> usize {
-        match self {
-            Self::SeqSep | Self::AndThen => 0,
-            Self::Group | Self::Block | Self::Negate => 1,
-            Self::Func => 3, // Params, Returns, Block
-            _ => 2,
-        }
-    }
-}
-
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
-enum StmtOp {
-    // Just `expr;` or `;`.
-    // These may be "pure" but that doesn't mean the
-    // code they contain has no side-effects! They are, however,
-    // pure w.r.t. to the naming environment.
-    Pure,
-    // `=`
-    Assign,
-    // The second colon in `::`
-    Define,
 }
 
 struct Parser<'src> {
@@ -231,7 +106,6 @@ impl<'src> Parser<'src> {
             }
         }
 
-        // eprintln!("[PARSE_BLOCK]: stmts = {stmts:?}");
         Ok(self.ast.nodes.insert(ASTNode {
             ty: ASTNodeType::Expr(ExprOp::Block),
             args: stmts,
@@ -267,7 +141,6 @@ impl<'src> Parser<'src> {
         };
 
         if matches!(tokens.peek(), Some(Token{ ty, ..}) if stop_at.iter().all(|s| s != ty)) {
-            // eprintln!("!!! ENTERING EXPR IN STMT");
             args.push(self.parse_expr(tokens, stop_at)?);
         }
 
@@ -347,27 +220,13 @@ impl<'src> Parser<'src> {
         stop_at: &[TokenType],
     ) -> KumoResult<DefaultKey> {
         let operand_stack_check = self.operand_stack.len();
-        let operator_stack_check = self.operator_stack.len();
 
         let mut curr_state = ParserState::Unary;
-        // eprintln!("!!! WILL STOP on {:?}", stop_at);
         loop {
             match tokens.peek() {
-                Some(Token { ty, .. }) if stop_at.iter().all(|tty| ty != tty) => {
-                    // eprintln!("!!! Upcoming token: {:?}", ty);
-                }
+                Some(Token { ty, .. }) if stop_at.iter().all(|tty| ty != tty) => {}
                 _ => break,
             }
-
-            /*
-            dbg!(&curr_state);
-            eprintln!("-ators: {:?}", &self.operator_stack[operator_stack_check..]);
-            eprint!("-ands: ");
-            for and in &self.operand_stack[operand_stack_check..] {
-                eprint!("{:?} ", &self.ast.nodes[*and]);
-            }
-            eprintln!();
-            */
 
             curr_state = match curr_state {
                 ParserState::Unary => self.unary_expr(tokens)?,
@@ -375,21 +234,7 @@ impl<'src> Parser<'src> {
             }
         }
 
-        /*
-        eprintln!("-ators: {:?}", &self.operator_stack[operator_stack_check..]);
-        for n in &self.ast.nodes {
-            eprintln!("{n:?}");
-        }
-        */
-
         while self.operand_stack.len() > operand_stack_check + 1 {
-            /*
-            for and in &self.operand_stack[operand_stack_check..] {
-                eprint!("{:?} ", &self.ast.nodes[*and]);
-            }
-            eprintln!();
-            */
-
             let op = self.operator_stack.pop().expect(
                 "Got empty operator stack (this should be impossible) -- \
                     Were some operands coalesced incorrectly?",
@@ -397,7 +242,6 @@ impl<'src> Parser<'src> {
             self.reduce_top_op(op)?;
         }
 
-        // eprintln!("!!! Trying to pop that last one...");
         self.operand_stack
             .pop()
             .ok_or_else(|| KumoError::new(END_OF_STREAM.into(), DebugInfo::default()))
@@ -417,7 +261,6 @@ impl<'src> Parser<'src> {
         }
 
         let tok = tokens.next().unwrap();
-        // dbg!(&tok);
 
         let next_state = match tok.ty {
             name @ TokenType::Ident(_) => {
@@ -486,19 +329,6 @@ impl<'src> Parser<'src> {
                 self.operand_stack.push(block_node);
                 ParserState::Unary
             }
-            /*
-            // An empty block.
-            TokenType::RCurly => {
-                if !matches!(self.operator_stack.pop(), Some(ExprOp::Block)) {
-                    panic!("oh wtf I missed this");
-                }
-                self.operand_stack.push(
-                    self.ast
-                        .nodes
-                        .insert(ASTNode::leaf(ASTNodeType::Expr(ExprOp::Block))),
-                );
-            }
-            */
             // TODO: return error instead of panicking.
             t => panic!("idk what {t:?} is in unary state! AST"),
         };
@@ -522,10 +352,8 @@ impl<'src> Parser<'src> {
         }
 
         let tok = tokens.next().unwrap();
-        // dbg!(&tok);
 
         let next_state = match tok.ty {
-            // `Decl` is not an arithmetic operator but it sure parses like one
             arith_op @ (TokenType::Plus
             | TokenType::Minus
             | TokenType::Star
@@ -543,8 +371,6 @@ impl<'src> Parser<'src> {
                 while let Some(op) = self.operator_stack.pop_if(|op| *op >= ExprOp::Decl) {
                     self.reduce_top_op(op)?;
                 }
-
-                // Painfully attempt to move from expr world to stmt world
 
                 // Top of operand stack must be `Ident` we care about now.
                 let arg_key = self
@@ -586,23 +412,12 @@ impl<'src> Parser<'src> {
                     stmt_toks.push(tokens.next().unwrap());
                 }
 
-                /*
-                eprintln!(
-                    "[PARSE_EXPR]: Going to parse colon rhs with: {:?}",
-                    stmt_toks
-                );
-                eprintln!(
-                    "[PARSE_EXPR]: Before then, next token to munch: {:?}",
-                    tokens.peek()
-                );
-                */
                 let decl_key = self.parse_stmt(
                     &mut multipeek(stmt_toks),
                     &[TokenType::Comma, TokenType::RParen, TokenType::Semicolon],
                 )?;
 
                 self.operand_stack.push(decl_key);
-                // Why not go into binary state? Let's find out.
                 ParserState::Binary
             }
             TokenType::LParen => {
@@ -677,8 +492,6 @@ impl<'src> Parser<'src> {
     fn reduce_top_op(&mut self, op: ExprOp) -> KumoResult<()> {
         // I don't know if it's remotely valuable to try to balance the AST.
         // Maybe a peephole optimizer might be able to swap instructions out?
-        // dbg!(&op);
-        // dbg!(self.operand_stack.len());
         let args = self
             .operand_stack
             .drain((self.operand_stack.len() - op.arg_count())..)
@@ -688,9 +501,7 @@ impl<'src> Parser<'src> {
             ty: ASTNodeType::Expr(op),
             args,
         });
-        // dbg!(&self.ast.nodes[new_operand]);
         self.operand_stack.push(new_operand);
-        // dbg!(self.operand_stack.len());
 
         Ok(())
     }
@@ -702,10 +513,7 @@ impl<'src> Parser<'src> {
     fn reduce_sequence(&mut self, parent_ops: &[ExprOp], seqsep: ExprOp) -> KumoResult<()> {
         let mut args = SmallVec::new();
         loop {
-            // dbg!(&self.operator_stack);
             let stack_top = self.operator_stack.pop();
-            // dbg!(&stack_top);
-            // dbg!(&seqsep);
             match stack_top {
                 Some(op) if op == seqsep => {
                     // TODO: Transfer debug info to AST nodes.
@@ -742,10 +550,9 @@ impl<'src> Parser<'src> {
                     self.operand_stack.push(finalized_seq_node);
                     break;
                 }
-                Some(op) => {
+                Some(_op) => {
                     // TODO: I really gotta rethink how I do error handling...
                     // Is this fine?
-                    // dbg!(op);
                     return Err(KumoError::new(
                         "Unexpected op in arg list.".into(),
                         DebugInfo::default(),

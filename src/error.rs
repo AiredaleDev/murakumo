@@ -28,10 +28,6 @@ impl From<&Token<'_>> for DebugInfo {
     }
 }
 
-// TODO: Fix this stupid nonsense so I can accumulate errors into one big list
-// and remove the distinction between them.
-// If I need to reuse an error in a module I'll just make it a const.
-
 #[derive(Debug)]
 pub struct KumoError {
     msg: String,
@@ -52,7 +48,7 @@ impl Display for KumoError {
     }
 }
 
-// TODO: Support pointing to multiple lines of code.
+// TODO: Support pointing to multiple lines of code for a particular error.
 pub fn report(source: &str, error: KumoError, filename: Option<&Path>) {
     let DebugInfo {
         pos,

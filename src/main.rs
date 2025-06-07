@@ -1,13 +1,16 @@
 use clap::Parser;
 use std::{fs::read_to_string, path::PathBuf};
 
+mod ast;
 mod error;
 mod lexer;
 mod parser;
+mod unify;
 
+pub use ast::{AST, ASTNode};
 pub use error::{DebugInfo, KumoError, KumoResult};
-pub use lexer::Token;
 use lexer::lex;
+pub use lexer::{Token, TokenType};
 use parser::parse;
 
 #[derive(Parser)]
@@ -19,7 +22,10 @@ struct Args {
 fn compile(input: &str) -> KumoResult<()> {
     let tokens = lex(input)?;
     // println!("{tokens:#?}");
-    let ast = parse(tokens)?;
+    let mut ast = parse(tokens)?;
+    println!("{ast}");
+    println!("\nFOLD CONSTANTS:\n");
+    ast::fold_constants(&mut ast);
     println!("{ast}");
     Ok(())
 }

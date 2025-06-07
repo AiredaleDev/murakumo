@@ -1,4 +1,5 @@
-sus :: 10;
+sus :: 10 + 20;
+bends_but_does_not_break :: 1.0 + 4;
 
 add :: (x: int, y: int) -> int {
     x + y
@@ -8,5 +9,7 @@ main :: () {
     // Tells you how it is.
     print("no lie.");
     print("da sum is: ", add(30, 12));
-    30e2; 15; "how peculiar"; 10.5
+    print("how suspect: ", sus);
+    result := add(32 * 32, 64 * 64);
+    30e2; 15 * 20 + 10; "how peculiar"; 10.5
 }
