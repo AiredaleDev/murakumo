@@ -1,7 +1,6 @@
 use multipeek::{MultiPeek, multipeek};
-use slotmap::{DefaultKey, Key};
+use slotmap::DefaultKey;
 use smallvec::{SmallVec, smallvec};
-use std::fmt::Display;
 
 use crate::{
     AST, ASTNode, DebugInfo, KumoError, KumoResult, Token,
@@ -29,6 +28,8 @@ struct Parser<'src> {
 
 // NOTE: Unstable :(
 // type TokIter<'src> = impl Iterator<Item = Token<'src>>;
+// I use the verbose iterator type because I don't want to have
+// to track the index of where I am in the tokenstream.
 
 impl<'src> Parser<'src> {
     fn new() -> Self {
@@ -570,29 +571,5 @@ impl<'src> Parser<'src> {
         Ok(())
     }
 }
-
-impl Display for AST<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // For printing, we want a preorder traversal.
-        let mut traversal_stack = Vec::new();
-        if !self.root.is_null() {
-            traversal_stack.push((0, self.root));
-            while !traversal_stack.is_empty() {
-                let (depth, curr) = traversal_stack.pop().unwrap();
-                for _ in 0..depth {
-                    write!(f, "| ")?;
-                }
-                let node = &self.nodes[curr];
-                writeln!(f, "{:?}", node.ty)?;
-                traversal_stack.extend(node.args.iter().rev().map(|v| (depth + 1, *v)));
-            }
-
-            Ok(())
-        } else {
-            write!(f, "{{empty tree}}")
-        }
-    }
-}
-
 const END_OF_STREAM: &str = "Ran outta tokens!";
 const ARITY_MISMATCH: &str = "Insufficient operands provided.";

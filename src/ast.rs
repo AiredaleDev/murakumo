@@ -1,9 +1,11 @@
-use slotmap::{DefaultKey, SlotMap};
+use slotmap::{DefaultKey, Key, SlotMap};
 use smallvec::SmallVec;
 use ustr::Ustr;
+use std::fmt::Display;
 
 use crate::TokenType;
 
+// NOTE: This is not the canonical Rust way of building an AST!
 #[derive(Debug, Default)]
 pub struct AST<'src> {
     pub nodes: SlotMap<DefaultKey, ASTNode<'src>>,
@@ -13,9 +15,11 @@ pub struct AST<'src> {
 type Children = SmallVec<[DefaultKey; 3]>;
 
 impl<'src> AST<'src> {
-    // Actually, your honor, the AST never actually *owns* a node's arguments
-    // while updating them, so it's impossible for us to fail our end of the
-    // bargain while we rebuild him.
+    // Actually, your honor, the AST's slotmap, and by extension the AST itself,
+    // never actually *owns* a node's arguments while updating them, so it's
+    // impossible for us to fail our end of the bargain while we rebuild him.
+    //
+    // (This is the price I pay for doing the above)
     pub fn with_args(
         &mut self,
         node_key: DefaultKey,
@@ -26,6 +30,30 @@ impl<'src> AST<'src> {
         self.nodes[node_key].args = args;
     }
 }
+
+impl Display for AST<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // For printing, we want a preorder traversal.
+        let mut traversal_stack = Vec::new();
+        if !self.root.is_null() {
+            traversal_stack.push((0, self.root));
+            while !traversal_stack.is_empty() {
+                let (depth, curr) = traversal_stack.pop().unwrap();
+                for _ in 0..depth {
+                    write!(f, "| ")?;
+                }
+                let node = &self.nodes[curr];
+                writeln!(f, "{:?}", node.ty)?;
+                traversal_stack.extend(node.args.iter().rev().map(|v| (depth + 1, *v)));
+            }
+
+            Ok(())
+        } else {
+            write!(f, "{{empty tree}}")
+        }
+    }
+}
+
 
 #[derive(Debug)]
 pub struct ASTNode<'src> {
