@@ -1,4 +1,3 @@
-use multipeek::{MultiPeek, multipeek};
 use slotmap::DefaultKey;
 use smallvec::{SmallVec, smallvec};
 
@@ -8,9 +7,9 @@ use crate::{
     lexer::TokenType,
 };
 
-pub fn parse(tokens: Box<[Token]>) -> KumoResult<AST> {
-    let mut p = Parser::new();
-    p.ast.root = p.parse_module(&mut multipeek(tokens.into_iter()))?;
+pub fn parse(mut tokens: Box<[Token]>) -> KumoResult<AST> {
+    let mut p = Parser::new(&mut tokens);
+    p.ast.root = p.parse_module()?;
     Ok(p.ast)
 }
 
@@ -20,39 +19,53 @@ enum ParserState {
     Binary,
 }
 
-struct Parser<'src> {
+struct Parser<'iter, 'src> {
     ast: AST<'src>,
+    tokens: &'iter mut [Token<'src>],
+    cursor: usize,
     operand_stack: Vec<DefaultKey>,
     operator_stack: Vec<ExprOp>,
 }
 
-// NOTE: Unstable :(
-// type TokIter<'src> = impl Iterator<Item = Token<'src>>;
-// I use the verbose iterator type because I don't want to have
-// to track the index of where I am in the tokenstream.
-
-impl<'src> Parser<'src> {
-    fn new() -> Self {
+impl<'iter, 'src: 'iter> Parser<'iter, 'src> {
+    fn new(tokens: &'iter mut [Token<'src>]) -> Self {
         Self {
             ast: AST::default(),
+            tokens,
+            cursor: 0,
             // For expression parsing.
             operand_stack: Vec::new(),
             operator_stack: Vec::new(),
         }
     }
 
+    fn peek(&self) -> Option<&Token<'src>> {
+        self.tokens.get(self.cursor)
+    }
+
+    fn peek_nth(&self, i: usize) -> Option<&Token<'src>> {
+        self.tokens.get(self.cursor + i)
+    }
+
+    fn next(&mut self) -> Option<Token<'src>> {
+        if self.cursor < self.tokens.len() {
+            let tok = std::mem::take(&mut self.tokens[self.cursor]);
+            self.cursor += 1;
+            Some(tok)
+        } else {
+            None
+        }
+    }
+
     // module ::= stmt*
     // Each file implicitly declares a new module. This is the only way
     // to create new modules.
-    fn parse_module(
-        &mut self,
-        tokens: &mut MultiPeek<impl Iterator<Item = Token<'src>>>,
-    ) -> KumoResult<DefaultKey> {
+    fn parse_module(&mut self) -> KumoResult<DefaultKey> {
         let mut stmts = SmallVec::new();
-        while tokens.peek().is_some() {
-            stmts.push(self.parse_stmt(tokens, &[TokenType::Semicolon, TokenType::RCurly])?);
+        while self.peek().is_some() {
+            stmts.push(self.parse_stmt(&[TokenType::Semicolon, TokenType::RCurly])?);
             // Eat semicolons and right curly braces that come your way.
-            tokens.next();
+            self.next();
         }
 
         Ok(self.ast.nodes.insert(ASTNode {
@@ -62,33 +75,30 @@ impl<'src> Parser<'src> {
     }
 
     // block ::= '{' stmt* (expr|stmt)? '}'
-    fn parse_block(
-        &mut self,
-        tokens: &mut MultiPeek<impl Iterator<Item = Token<'src>>>,
-    ) -> KumoResult<DefaultKey> {
+    fn parse_block(&mut self) -> KumoResult<DefaultKey> {
         let mut stmts = SmallVec::new();
         while !matches!(
-            tokens.peek(),
+            self.peek(),
             Some(Token {
                 ty: TokenType::RCurly,
                 ..
             }) | None
         ) {
-            stmts.push(self.parse_stmt(tokens, &[TokenType::Semicolon, TokenType::RCurly])?);
+            stmts.push(self.parse_stmt(&[TokenType::Semicolon, TokenType::RCurly])?);
             // Want to eat semicolons but leave RCurly so we know when to stop -- this will also
             // let us eat the tail expression
             if matches!(
-                tokens.peek(),
+                self.peek(),
                 Some(Token {
                     ty: TokenType::Semicolon,
                     ..
                 })
             ) {
-                tokens.next();
+                self.next();
                 // Add implicit unit literal in the case of { stmt; stmt; ... stmt; }
                 // This way a block *always* evaluates to something (even it's unit)
                 if matches!(
-                    tokens.peek(),
+                    self.peek(),
                     Some(Token {
                         ty: TokenType::RCurly,
                         ..
@@ -107,6 +117,12 @@ impl<'src> Parser<'src> {
             }
         }
 
+        // Eat the RCurly, insert a semicolon.
+        self.tokens[self.cursor] = Token {
+            ty: TokenType::Semicolon,
+            info: DebugInfo::default(),
+        };
+
         Ok(self.ast.nodes.insert(ASTNode {
             ty: ASTNodeType::Expr(ExprOp::Block),
             args: stmts,
@@ -115,34 +131,30 @@ impl<'src> Parser<'src> {
 
     // stmt($stop) ::= (lhs assign_op)? expr? $stop
     // assign_op ::= '=' | ':'
-    fn parse_stmt(
-        &mut self,
-        tokens: &mut MultiPeek<impl Iterator<Item = Token<'src>>>,
-        stop_at: &[TokenType],
-    ) -> KumoResult<DefaultKey> {
+    fn parse_stmt(&mut self, stop_at: &[TokenType]) -> KumoResult<DefaultKey> {
         // Check for assignment.
         // If it's there, go down the decl/assign path.
         let mut args = SmallVec::new();
-        if let Some(tok) = tokens.peek_nth(1) {
+        if let Some(tok) = self.peek_nth(1) {
             if matches!(tok.ty, TokenType::Equal | TokenType::Colon) {
-                args.push(self.parse_decl_assign_lhs(tokens)?);
+                args.push(self.parse_decl_assign_lhs()?);
             }
         }
 
-        let stmt_ty = match tokens.peek().map(|t| &t.ty) {
+        let stmt_ty = match self.peek().map(|t| &t.ty) {
             Some(TokenType::Equal) => {
-                tokens.next();
+                self.next();
                 StmtOp::Assign
             }
             Some(TokenType::Colon) => {
-                tokens.next();
+                self.next();
                 StmtOp::Define
             }
             _ => StmtOp::Pure,
         };
 
-        if matches!(tokens.peek(), Some(Token{ ty, ..}) if stop_at.iter().all(|s| s != ty)) {
-            args.push(self.parse_expr(tokens, stop_at)?);
+        if matches!(self.peek(), Some(Token{ ty, ..}) if stop_at.iter().all(|s| s != ty)) {
+            args.push(self.parse_expr(stop_at)?);
         }
 
         Ok(self.ast.nodes.insert(ASTNode {
@@ -152,48 +164,47 @@ impl<'src> Parser<'src> {
     }
 
     // lhs ::= ident | decl
-    fn parse_decl_assign_lhs(
-        &mut self,
-        tokens: &mut MultiPeek<impl Iterator<Item = Token<'src>>>,
-    ) -> KumoResult<DefaultKey> {
+    fn parse_decl_assign_lhs(&mut self) -> KumoResult<DefaultKey> {
         // TODO: Handle multiple returns.
-        let name = match tokens.next() {
-            Some(
-                name @ Token {
-                    ty: TokenType::Ident(_),
-                    ..
-                },
-            ) => self
+        let name = match self.next() {
+            Some(Token {
+                ty: TokenType::Ident(name),
+                ..
+            }) => self
                 .ast
                 .nodes
-                .insert(ASTNode::leaf(ASTNodeType::Ident(name.ty))),
+                .insert(ASTNode::leaf(ASTNodeType::Ident(name.into()))),
             _ => {
                 return Err(KumoError::new(
                     "Expected identifier.".into(),
-                    DebugInfo::default(),
+                    // On the slow path, only one error will make it for now, who cares?
+                    self.tokens
+                        .get(self.cursor - 1)
+                        .map(|tok| tok.info.clone())
+                        .unwrap_or(DebugInfo::default()),
                 ));
             }
         };
 
         // Look at the next (two) token(s).
-        let next_tok = tokens.next().unwrap();
+        let next_tok = self.next().unwrap();
         let lhs = match next_tok.ty {
             // Term decl!
             TokenType::Colon => {
-                let ty = match tokens.peek().map(|t| &t.ty) {
+                let ty = match self.peek().map(|t| &t.ty) {
                     Some(TokenType::Ident(ty_name)) => Type::from_str(ty_name),
                     Some(TokenType::Colon | TokenType::Equal) => Type::Hole,
                     _ => {
                         return Err(KumoError::new(
                             "Expected type identifier, `:`, or `=`.".into(),
-                            DebugInfo::from(&next_tok),
+                            next_tok.info,
                         ));
                     }
                 };
 
                 // Specified a type: eat the name.
                 if !matches!(ty, Type::Hole) {
-                    tokens.next();
+                    self.next();
                 }
 
                 let ty = self.ast.nodes.insert(ASTNode::leaf(ASTNodeType::Type(ty)));
@@ -207,7 +218,7 @@ impl<'src> Parser<'src> {
             _ => {
                 return Err(KumoError::new(
                     "Expected `:`, or `=`.".into(),
-                    DebugInfo::from(&next_tok),
+                    next_tok.info,
                 ));
             }
         };
@@ -215,23 +226,19 @@ impl<'src> Parser<'src> {
         Ok(lhs)
     }
 
-    fn parse_expr(
-        &mut self,
-        tokens: &mut MultiPeek<impl Iterator<Item = Token<'src>>>,
-        stop_at: &[TokenType],
-    ) -> KumoResult<DefaultKey> {
+    fn parse_expr(&mut self, stop_at: &[TokenType]) -> KumoResult<DefaultKey> {
         let operand_stack_check = self.operand_stack.len();
 
         let mut curr_state = ParserState::Unary;
         loop {
-            match tokens.peek() {
+            match self.peek() {
                 Some(Token { ty, .. }) if stop_at.iter().all(|tty| ty != tty) => {}
                 _ => break,
             }
 
             curr_state = match curr_state {
-                ParserState::Unary => self.unary_expr(tokens)?,
-                ParserState::Binary => self.binary_expr(tokens)?,
+                ParserState::Unary => self.unary_expr()?,
+                ParserState::Binary => self.binary_expr()?,
             }
         }
 
@@ -248,10 +255,7 @@ impl<'src> Parser<'src> {
             .ok_or_else(|| KumoError::new(END_OF_STREAM.into(), DebugInfo::default()))
     }
 
-    fn unary_expr(
-        &mut self,
-        tokens: &mut MultiPeek<impl Iterator<Item = Token<'src>>>,
-    ) -> KumoResult<ParserState> {
+    fn unary_expr(&mut self) -> KumoResult<ParserState> {
         fn type_of_lit(lit: &TokenType) -> Type {
             match lit {
                 TokenType::IntLit(_) => Type::ComptimeInt,
@@ -261,14 +265,14 @@ impl<'src> Parser<'src> {
             }
         }
 
-        let tok = tokens.next().unwrap();
+        let tok = self.next().unwrap();
 
         let next_state = match tok.ty {
-            name @ TokenType::Ident(_) => {
+            TokenType::Ident(name) => {
                 let k = self
                     .ast
                     .nodes
-                    .insert(ASTNode::leaf(ASTNodeType::Ident(name)));
+                    .insert(ASTNode::leaf(ASTNodeType::Ident(name.into())));
                 self.operand_stack.push(k);
                 ParserState::Binary
             }
@@ -326,7 +330,7 @@ impl<'src> Parser<'src> {
             // A new block. Of course it's sensible to be able to introduce new scopes whenever
             // you'd like!
             TokenType::LCurly => {
-                let block_node = self.parse_block(tokens)?;
+                let block_node = self.parse_block()?;
                 self.operand_stack.push(block_node);
                 ParserState::Unary
             }
@@ -337,10 +341,7 @@ impl<'src> Parser<'src> {
         Ok(next_state)
     }
 
-    fn binary_expr(
-        &mut self,
-        tokens: &mut MultiPeek<impl Iterator<Item = Token<'src>>>,
-    ) -> KumoResult<ParserState> {
+    fn binary_expr(&mut self) -> KumoResult<ParserState> {
         fn binop_from_token(tok: &TokenType) -> ExprOp {
             match tok {
                 TokenType::Plus => ExprOp::Add,
@@ -352,7 +353,7 @@ impl<'src> Parser<'src> {
             }
         }
 
-        let tok = tokens.next().unwrap();
+        let tok = self.next().unwrap();
 
         let next_state = match tok.ty {
             arith_op @ (TokenType::Plus
@@ -374,12 +375,12 @@ impl<'src> Parser<'src> {
                 }
 
                 // Top of operand stack must be `Ident` we care about now.
-                let arg_key = self
-                    .operand_stack
-                    .pop()
-                    .ok_or_else(|| KumoError::new(ARITY_MISMATCH.into(), DebugInfo::from(&tok)))?;
+                let Some(arg_key) = self.operand_stack.pop() else {
+                    return Err(KumoError::new(ARITY_MISMATCH.into(), tok.info));
+                };
+
                 let ASTNode {
-                    ty: ASTNodeType::Ident(arg_name),
+                    ty: ASTNodeType::Ident(_),
                     ..
                 } = self
                     .ast
@@ -387,36 +388,15 @@ impl<'src> Parser<'src> {
                     .remove(arg_key)
                     .expect("how did we get a key but nothing in the tree?!")
                 else {
+                    let should_be_ident_tok = std::mem::take(&mut self.tokens[self.cursor - 1]);
                     return Err(KumoError::new(
                         "Expected identifier.".into(),
-                        DebugInfo::default(),
+                        should_be_ident_tok.info,
                     ));
                 };
-                // TODO: LEAKING ABSTRACTION
-                // I have to REBUILD the token just to get it to play nicely.
-                let arg_token = Token {
-                    ty: arg_name,
-                    pos: tok.pos,
-                    line: tok.line,
-                    col: tok.col,
-                };
 
-                let mut stmt_toks: SmallVec<[Token; 5]> = smallvec![arg_token, tok];
-                // `take_while` eats the sentinel token which doesn't get included,
-                // effectively deleting it. No good for our use-case.
-                loop {
-                    match tokens.peek().map(|t| &t.ty) {
-                        Some(TokenType::Comma | TokenType::RParen | TokenType::Semicolon)
-                        | None => break,
-                        _ => {}
-                    }
-                    stmt_toks.push(tokens.next().unwrap());
-                }
-
-                let decl_key = self.parse_stmt(
-                    &mut multipeek(stmt_toks),
-                    &[TokenType::Comma, TokenType::RParen, TokenType::Semicolon],
-                )?;
+                let decl_key =
+                    self.parse_stmt(&[TokenType::Comma, TokenType::RParen, TokenType::Semicolon])?;
 
                 self.operand_stack.push(decl_key);
                 ParserState::Binary
@@ -438,7 +418,7 @@ impl<'src> Parser<'src> {
                 while let Some(op) = self.operator_stack.pop_if(|op| *op > ExprOp::SeqSep) {
                     self.reduce_top_op(op)?;
                 }
-                self.reduce_sequence(&[ExprOp::Group, ExprOp::Call], ExprOp::SeqSep)?;
+                self.reduce_sequence(&[ExprOp::Group, ExprOp::Call], ExprOp::SeqSep, tok.info)?;
                 ParserState::Binary
             }
             TokenType::LCurly => {
@@ -465,18 +445,20 @@ impl<'src> Parser<'src> {
                     }
                 }
 
-                let block_node = self.parse_block(tokens)?;
+                let block_node = self.parse_block()?;
                 self.operand_stack.push(block_node);
 
                 ParserState::Unary
             }
+            /*
             TokenType::RCurly => {
                 while let Some(op) = self.operator_stack.pop_if(|op| *op > ExprOp::AndThen) {
                     self.reduce_top_op(op)?;
                 }
-                self.reduce_sequence(&[ExprOp::Block], ExprOp::AndThen)?;
+                self.reduce_sequence(&[ExprOp::Block], ExprOp::AndThen, tok.info)?;
                 ParserState::Unary
             }
+            */
             TokenType::Arrow => {
                 self.operator_stack.push(ExprOp::Func);
                 ParserState::Unary
@@ -511,7 +493,12 @@ impl<'src> Parser<'src> {
     // Assumes fully reduced elems, i.e.
     // -ators: ... parent_op Seq^(arity)
     // -ands: ... elem_1, elem_2, ... elem_arity
-    fn reduce_sequence(&mut self, parent_ops: &[ExprOp], seqsep: ExprOp) -> KumoResult<()> {
+    fn reduce_sequence(
+        &mut self,
+        parent_ops: &[ExprOp],
+        seqsep: ExprOp,
+        info: DebugInfo,
+    ) -> KumoResult<()> {
         let mut args = SmallVec::new();
         loop {
             let stack_top = self.operator_stack.pop();
@@ -551,19 +538,16 @@ impl<'src> Parser<'src> {
                     self.operand_stack.push(finalized_seq_node);
                     break;
                 }
-                Some(_op) => {
+                Some(op) => {
                     // TODO: I really gotta rethink how I do error handling...
                     // Is this fine?
                     return Err(KumoError::new(
-                        "Unexpected op in arg list.".into(),
-                        DebugInfo::default(),
+                        format!("Unexpected op in arg list: {op:?}"),
+                        info,
                     ));
                 }
                 None => {
-                    return Err(KumoError::new(
-                        "Unbalanced bracket".into(),
-                        DebugInfo::default(),
-                    ));
+                    return Err(KumoError::new("Unbalanced bracket".into(), info));
                 }
             }
         }

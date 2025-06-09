@@ -1,31 +1,13 @@
-use crate::Token;
 use std::{fmt::Display, path::Path};
 
 pub type KumoResult<T> = Result<T, KumoError>;
 
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct DebugInfo {
     pub pos: usize,
     pub line: usize,
     pub col: usize,
     pub len: usize,
-}
-
-impl From<&Token<'_>> for DebugInfo {
-    fn from(value: &Token<'_>) -> Self {
-        use crate::lexer::TokenType;
-        let len = match value.ty {
-            TokenType::Ident(i) => i.len(),
-            _ => 1,
-        };
-
-        Self {
-            pos: value.pos,
-            line: value.line,
-            col: value.col,
-            len,
-        }
-    }
 }
 
 #[derive(Debug)]

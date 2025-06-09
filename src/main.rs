@@ -7,11 +7,12 @@ mod lexer;
 mod parser;
 mod unify;
 
-pub use ast::{AST, ASTNode};
+pub use ast::{AST, ASTNode, ASTNodeType};
 pub use error::{DebugInfo, KumoError, KumoResult};
 use lexer::lex;
 pub use lexer::{Token, TokenType};
 use parser::parse;
+use unify::unify_types;
 
 #[derive(Parser)]
 #[command(version, about)]
@@ -27,6 +28,8 @@ fn compile(input: &str) -> KumoResult<()> {
     println!("\nFOLD CONSTANTS:\n");
     ast::fold_constants(&mut ast);
     println!("{ast}");
+    let type_env = unify_types(&mut ast);
+    println!("{type_env:?}");
     Ok(())
 }
 

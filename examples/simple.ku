@@ -10,6 +10,7 @@ main :: () {
     print("no lie.");
     print("da sum is: ", add(30, 12));
     print("how suspect: ", sus);
+    {} // Sometimes ya wanna nest blocks, yknow?
     result := add(32 * 32, 64 * 64);
     30e2; 15 * 20 + 10; "how peculiar"; 10.5
 }

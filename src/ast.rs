@@ -1,7 +1,7 @@
 use slotmap::{DefaultKey, Key, SlotMap};
 use smallvec::SmallVec;
-use ustr::Ustr;
 use std::fmt::Display;
+use ustr::Ustr;
 
 use crate::TokenType;
 
@@ -20,11 +20,7 @@ impl<'src> AST<'src> {
     // impossible for us to fail our end of the bargain while we rebuild him.
     //
     // (This is the price I pay for doing the above)
-    pub fn with_args(
-        &mut self,
-        node_key: DefaultKey,
-        f: impl FnOnce(&mut Self, &mut Children),
-    ) {
+    pub fn with_args(&mut self, node_key: DefaultKey, f: impl FnOnce(&mut Self, &mut Children)) {
         let mut args = std::mem::take(&mut self.nodes[node_key].args);
         f(self, &mut args);
         self.nodes[node_key].args = args;
@@ -53,7 +49,6 @@ impl Display for AST<'_> {
         }
     }
 }
-
 
 #[derive(Debug)]
 pub struct ASTNode<'src> {
@@ -84,9 +79,10 @@ pub enum Type {
     // Arbitrary precision integers, with a notion of "packed struct."
     // In non-packed environments, APInts are rounded up to their word-aligned
     // size.
-    Int { size: usize, signed: bool },
+    Int(usize),
+    Nat(usize),
     // Maybe we should constrain the set of possible float sizes?
-    Float { size: usize },
+    Float(usize),
     String,
     // `Comptime` types assume max(sizeof(their value), use)
     // This is done for convenience -- they're comptime-known, so they're
@@ -99,22 +95,28 @@ pub enum Type {
     // This is why I call `.into` on `str` literals that need to behave as `String`s
     // and not `to_string`
     Custom(Ustr),
+    Func(Vec<Type>),
+}
+
+impl Type {
+    fn value_type(&self) -> &Self {
+        match self {
+            Self::Func(ts) => ts
+                .last()
+                .expect("If this returns nothing, make it return unit!"),
+            t => t,
+        }
+    }
 }
 
 impl Type {
     pub fn from_str(raw: &str) -> Self {
         match raw {
-            "int" => Type::Int {
-                size: 64,
-                signed: true,
-            },
-            "nat" => Type::Int {
-                size: 64,
-                signed: false,
-            },
             "unit" => Type::Unit,
-            "f32" => Type::Float { size: 32 },
-            "f64" => Type::Float { size: 64 },
+            "int" => Type::Int(64),
+            "nat" => Type::Nat(64),
+            "f32" => Type::Float(32),
+            "f64" => Type::Float(64),
             name => Type::Custom(name.into()),
         }
     }
@@ -123,7 +125,7 @@ impl Type {
 // NOTE: Maybe Decl should be its own category of node.
 #[derive(Debug)]
 pub enum ASTNodeType<'src> {
-    Ident(TokenType<'src>),
+    Ident(Ustr),
     Literal { val: TokenType<'src>, ty: Type },
     Type(Type),
     Expr(ExprOp),
@@ -201,7 +203,11 @@ pub fn fold_constants(ast: &mut AST) {
 }
 
 fn fold_stmt(ast: &mut AST, stmt: DefaultKey) {
-    let ASTNode { ty: ASTNodeType::Stmt(stmt_op), .. } = &ast.nodes[stmt] else {
+    let ASTNode {
+        ty: ASTNodeType::Stmt(stmt_op),
+        ..
+    } = &ast.nodes[stmt]
+    else {
         panic!("This *should* be a stmt and parsing should've handled this already!");
     };
 
@@ -377,7 +383,7 @@ fn fold_expr(ast: &mut AST, expr: DefaultKey) -> Option<DefaultKey> {
                     if let ASTNodeType::Literal { val, .. } = &mut ast.nodes[child].ty {
                         std::mem::take(val)
                     } else {
-                        return None
+                        return None;
                     }
                 }
                 ExprOp::Func => {
