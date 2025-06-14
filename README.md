@@ -8,19 +8,19 @@ In terms of video/blog post content, I think the most valuable thing would be to
 
 ### Progress:
 
-[ ] Front-end:
-  [ ] Lexing (DONE excluding control-flow constructs)
-  [ ] Parsing (DONE excluding control-flow constructs)
-  [ ] Type inference (Simple types)
-  [ ] Nice error-reporting
-  [ ] REPL
-[ ] Middle-"end":
-  [ ] IR
-  [ ] Optimization passes -- need to decide which ones beyond those listed below:
-[ ] Back-end (just x86 for now)
- [ ] Instruction Selection
- [ ] Instruciton Scheduling
- [ ] Register Allocation
+- [ ] Front-end:
+  - [ ] Lexing (DONE excluding control-flow constructs)
+  - [ ] Parsing (DONE excluding control-flow constructs)
+  - [ ] Type inference (Simple types)
+  - [ ] Nice error-reporting
+  - [ ] REPL
+- [ ] Middle-"end":
+  - [ ] IR
+  - [ ] Optimization passes -- need to decide which ones beyond those listed below:
+- [ ] Back-end (just x86 for now)
+  - [ ] Instruction Selection
+  - [ ] Instruciton Scheduling
+  - [ ] Register Allocation
 
 ### Language Features
 
