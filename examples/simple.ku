@@ -5,12 +5,22 @@ add :: (x: int, y: int) -> int {
     x + y
 }
 
+// We're going to need to pass pointers or have for-loops for this
+// to actually be a "mac" first.
+fake_mac :: (x: int, y: int) -> int {
+    result := x * add(x, y);
+    result
+}
+
 main :: () {
     // Tells you how it is.
-    print("no lie.");
-    print("da sum is: ", add(30, 12));
-    print("how suspect: ", sus);
+    // TODO: Add printing builtin
+    // print("no lie.");
+    // print("da sum is: ", add(30, 12));
+    // print("how suspect: ", sus);
     {} // Sometimes ya wanna nest blocks, yknow?
+    zero_me_pls: int;
+
     result := add(32 * 32, 64 * 64);
-    30e2; 15 * 20 + 10; "how peculiar"; 10.5
+    30e2; 15 * 20 + 10; "how peculiar"; 10.5;
 }

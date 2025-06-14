@@ -63,14 +63,12 @@ pub struct Token<'src> {
 
 // Take string and turn it into a TokenStream
 // `collect` is very powerful, it can trivially turn an Iter<Result<T, E>> into a Result<Collection<T>, E>>
-pub fn lex(input: &str) -> KumoResult<Box<[Token]>> {
+pub fn lex(input: &str) -> KumoResult<Box<[Token<'_>]>> {
     Lexer::new(input).collect()
 }
 
 pub struct Lexer<'iter, 'src: 'iter> {
-    // I'd use a Peekable<Chars> but it's just too restrictive.
-    // I need to be able to interact with multiple characters at once,
-    // but Peekable only allows one to see the next element (and nothing else!)
+    // Even multipeek was too restrictive for my needs.
     input: &'src [u8],
     pos: usize,
     line: usize,

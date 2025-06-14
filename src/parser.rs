@@ -2,8 +2,8 @@ use slotmap::DefaultKey;
 use smallvec::{SmallVec, smallvec};
 
 use crate::{
-    AST, ASTNode, DebugInfo, KumoError, KumoResult, Token,
-    ast::{ASTNodeType, ExprOp, StmtOp, Type},
+    AST, ASTNode, DebugInfo, KumoError, KumoResult, Token, Type,
+    ast::{ASTNodeType, ExprOp, StmtOp},
     lexer::TokenType,
 };
 
@@ -380,7 +380,7 @@ impl<'iter, 'src: 'iter> Parser<'iter, 'src> {
                 };
 
                 let ASTNode {
-                    ty: ASTNodeType::Ident(_),
+                    ty: ASTNodeType::Ident(name),
                     ..
                 } = self
                     .ast
@@ -388,11 +388,27 @@ impl<'iter, 'src: 'iter> Parser<'iter, 'src> {
                     .remove(arg_key)
                     .expect("how did we get a key but nothing in the tree?!")
                 else {
+                    // FIXME: This is not an identifier token.
                     let should_be_ident_tok = std::mem::take(&mut self.tokens[self.cursor - 1]);
                     return Err(KumoError::new(
                         "Expected identifier.".into(),
                         should_be_ident_tok.info,
                     ));
+                };
+
+                // The real issue, however, is that we take tokens because I want to avoid copying.
+                // I was correct to look back two tokens. I only foolishly assumed that they'd
+                // still be there.
+                // FIXME: I wish there were a nice way to avoid doing this. Back it up.
+                // The EE parser was not designed with variable declarations as expressions in mind.
+                self.cursor -= 2;
+                self.tokens[self.cursor] = Token {
+                    ty: TokenType::Ident(name.as_str()),
+                    ..Default::default()
+                };
+                self.tokens[self.cursor + 1] = Token {
+                    ty: TokenType::Colon,
+                    ..Default::default()
                 };
 
                 let decl_key =
@@ -475,10 +491,17 @@ impl<'iter, 'src: 'iter> Parser<'iter, 'src> {
     fn reduce_top_op(&mut self, op: ExprOp) -> KumoResult<()> {
         // I don't know if it's remotely valuable to try to balance the AST.
         // Maybe a peephole optimizer might be able to swap instructions out?
-        let args = self
+        let args: SmallVec<_> = self
             .operand_stack
             .drain((self.operand_stack.len() - op.arg_count())..)
             .collect();
+
+        // Handle return type for functions (needs to be converted to type)
+        if op == ExprOp::Func {
+            if let ASTNodeType::Ident(ty_name) = self.ast.nodes[args[1]].ty {
+                self.ast.nodes[args[1]].ty = ASTNodeType::Type(Type::from_str(ty_name.as_str()));
+            }
+        }
 
         let new_operand = self.ast.nodes.insert(ASTNode {
             ty: ASTNodeType::Expr(op),

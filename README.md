@@ -15,16 +15,16 @@ In terms of video/blog post content, I think the most valuable thing would be to
 - So it's really just Fortran with region-based memory-management and some second-order logic in the type system.
 - I kind of hate the way arena allocators in Rust work (or maybe I'm getting skill-issued by them, they don't do that in C) so RBMM it is.
 - (scope-creep kickstarter stretch-goal) OpenMP-style parallel-for -- at this point you might as well target MLIR instead of rolling your own backend.
-- (ROUND TWO) PTX/ROCm/OpenCL generation with an `acc for` construct -- If we want to tie this in with GPUs then we'll have to tag regions with a "device" and make the runtime
-a little heaiver. Oh well, the spirit of this project is "anything that is interesting to compile."
+- (ROUND TWO) PTX/ROCm/OpenCL generation with an `acc for` construct -- If we want to tie this in with GPUs then we'll have to tag regions with a "device" and make the runtime a little heaiver. Oh well, the spirit of this project is "anything that is interesting to compile."
 
-### Pedagogical Goals
+### Compiler Goals
 
 - Do something more interesting than just the textbook compiler for some C or Fortran-like language (hence region-based memory management even though it's only as good of an idea as programming in Rust xd)
   - Also towards this end, introduce polyhedral loop optimization which motivated the creation of MLIR
-- Be classical (cover all the great optimizations that have been with us since the 70s) but give the viewer a taste of something a little more interesting.
+- Be classical (cover all the great optimizations that have been with us since the 70s) but give curious source-code reader a taste of something a little more interesting.
 - Highlight some good Rust crates that make programming in it and achieving the performance a non-GC language should have much easier (e.g. slotmap)
 - Make a suite of solid benchmark programs so we can measure if our optmizations are actually doing something.
+- Be pleasant to use. Efficient and nice error-reporting are rarely mentioned in, let alone the focus of, compiler textbooks. I understand why on a surface level -- it's neither glamorous nor theoretical. The end user, however, is why a programming language exists in the first place.
 
 ### The IR
 

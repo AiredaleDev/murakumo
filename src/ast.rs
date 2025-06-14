@@ -1,18 +1,18 @@
-use slotmap::{DefaultKey, Key, SlotMap};
+use slotmap::{DefaultKey as NodeKey, Key, SlotMap};
 use smallvec::SmallVec;
 use std::fmt::Display;
 use ustr::Ustr;
 
-use crate::TokenType;
+use crate::{TokenType, Type};
 
 // NOTE: This is not the canonical Rust way of building an AST!
 #[derive(Debug, Default)]
 pub struct AST<'src> {
-    pub nodes: SlotMap<DefaultKey, ASTNode<'src>>,
-    pub root: DefaultKey,
+    pub nodes: SlotMap<NodeKey, ASTNode<'src>>,
+    pub root: NodeKey,
 }
 
-type Children = SmallVec<[DefaultKey; 3]>;
+type Children = SmallVec<[NodeKey; 3]>;
 
 impl<'src> AST<'src> {
     // Actually, your honor, the AST's slotmap, and by extension the AST itself,
@@ -20,7 +20,7 @@ impl<'src> AST<'src> {
     // impossible for us to fail our end of the bargain while we rebuild him.
     //
     // (This is the price I pay for doing the above)
-    pub fn with_args(&mut self, node_key: DefaultKey, f: impl FnOnce(&mut Self, &mut Children)) {
+    pub fn with_args(&mut self, node_key: NodeKey, f: impl FnOnce(&mut Self, &mut Children)) {
         let mut args = std::mem::take(&mut self.nodes[node_key].args);
         f(self, &mut args);
         self.nodes[node_key].args = args;
@@ -68,57 +68,6 @@ impl<'src> ASTNode<'src> {
 
     pub fn is_leaf(&self) -> bool {
         self.args.len() == 0
-    }
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub enum Type {
-    // For type inference.
-    Hole,
-    Unit,
-    // Arbitrary precision integers, with a notion of "packed struct."
-    // In non-packed environments, APInts are rounded up to their word-aligned
-    // size.
-    Int(usize),
-    Nat(usize),
-    // Maybe we should constrain the set of possible float sizes?
-    Float(usize),
-    String,
-    // `Comptime` types assume max(sizeof(their value), use)
-    // This is done for convenience -- they're comptime-known, so they're
-    // inline or looked-up immediately and constant-propagated.
-    // At the end of type inference, if a value is still "comptime...", the value assumes the
-    // default type (`int` = Int { size = 64, signed = true }, `float` = Float { size = 64 })
-    ComptimeInt,
-    ComptimeFloat,
-    // I literally just swapped `String` for `Ustr` and it worked transparently
-    // This is why I call `.into` on `str` literals that need to behave as `String`s
-    // and not `to_string`
-    Custom(Ustr),
-    Func(Vec<Type>),
-}
-
-impl Type {
-    fn value_type(&self) -> &Self {
-        match self {
-            Self::Func(ts) => ts
-                .last()
-                .expect("If this returns nothing, make it return unit!"),
-            t => t,
-        }
-    }
-}
-
-impl Type {
-    pub fn from_str(raw: &str) -> Self {
-        match raw {
-            "unit" => Type::Unit,
-            "int" => Type::Int(64),
-            "nat" => Type::Nat(64),
-            "f32" => Type::Float(32),
-            "f64" => Type::Float(64),
-            name => Type::Custom(name.into()),
-        }
     }
 }
 
@@ -202,7 +151,7 @@ pub fn fold_constants(ast: &mut AST) {
     });
 }
 
-fn fold_stmt(ast: &mut AST, stmt: DefaultKey) {
+fn fold_stmt(ast: &mut AST, stmt: NodeKey) {
     let ASTNode {
         ty: ASTNodeType::Stmt(stmt_op),
         ..
@@ -223,7 +172,7 @@ fn fold_stmt(ast: &mut AST, stmt: DefaultKey) {
     });
 }
 
-fn fold_expr(ast: &mut AST, expr: DefaultKey) -> Option<DefaultKey> {
+fn fold_expr(ast: &mut AST, expr: NodeKey) -> Option<NodeKey> {
     if !ast.nodes[expr].is_leaf() {
         // Reduce children
         ast.with_args(expr, |ast, args| {
