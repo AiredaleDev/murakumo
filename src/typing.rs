@@ -122,7 +122,6 @@ pub fn infer_types(ast: &AST) -> TypeEnv {
     // The list of defintions to search when inferring types.
     let mut ctx = vec![ast.root];
     type_env.insert(ast.root, UstrMap::default());
-    dbg!(&ast.nodes[ast.root]);
     for a in &ast.nodes[ast.root].args {
         typeof_stmt(ast, *a, &mut type_env, &mut ctx);
     }
@@ -132,7 +131,6 @@ pub fn infer_types(ast: &AST) -> TypeEnv {
 
 fn typeof_stmt(ast: &AST, stmt: NodeKey, type_env: &mut TypeEnv, ctx: &mut Vec<NodeKey>) -> Type {
     use crate::ast::StmtOp;
-    dbg!(&ast.nodes[stmt]);
     let ASTNodeType::Stmt(node_kind) = ast.nodes[stmt].ty else {
         panic!("Bad AST -- got {:?} instead of stmt.", ast.nodes[stmt]);
     };
@@ -181,7 +179,6 @@ fn typeof_lhs<'env>(
     ctx: &mut Vec<NodeKey>,
 ) -> &'env Type {
     use crate::ast::ExprOp;
-    dbg!(&ast.nodes[lhs]);
     match &ast.nodes[lhs].ty {
         ASTNodeType::Expr(ExprOp::Decl) => {
             let ASTNodeType::Type(ref ty) = ast.nodes[ast.nodes[lhs].args[1]].ty else {
@@ -197,7 +194,6 @@ fn typeof_lhs<'env>(
 }
 
 fn typeof_expr(ast: &AST, expr: NodeKey, type_env: &mut TypeEnv, ctx: &mut Vec<NodeKey>) -> Type {
-    dbg!(&ast.nodes[expr]);
     match &ast.nodes[expr].ty {
         ASTNodeType::Expr(_) => typeof_op(ast, expr, type_env, ctx),
         ASTNodeType::Ident(name) => {
@@ -215,7 +211,6 @@ fn typeof_expr(ast: &AST, expr: NodeKey, type_env: &mut TypeEnv, ctx: &mut Vec<N
 fn typeof_op(ast: &AST, expr: NodeKey, type_env: &mut TypeEnv, ctx: &mut Vec<NodeKey>) -> Type {
     use crate::ast::ExprOp;
 
-    dbg!(&ast.nodes[expr]);
     let ASTNodeType::Expr(op) = ast.nodes[expr].ty else {
         panic!("Expected expr node, found {:?}", ast.nodes[expr]);
     };
@@ -294,7 +289,6 @@ fn typeof_op(ast: &AST, expr: NodeKey, type_env: &mut TypeEnv, ctx: &mut Vec<Nod
             ctx.pop();
 
             let body_ret_ty = typeof_block(ast, body_key, type_env, ctx);
-            dbg!(&ast.nodes[ret_key]);
             let ASTNodeType::Type(sig_ret_ty) = &ast.nodes[ret_key].ty else {
                 panic!("Expected a return type, got something else instead...");
             };

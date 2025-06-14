@@ -30,6 +30,7 @@ fn compile(input: &str) -> KumoResult<()> {
     ast::fold_constants(&mut ast);
     println!("{ast}");
     let type_env = infer_types(&ast);
+    println!("\nINFER TYPES:\n");
     println!("{type_env:#?}");
     Ok(())
 }
