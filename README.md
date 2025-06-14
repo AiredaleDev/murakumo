@@ -6,6 +6,22 @@ I want to focus on optimization and code-generation, only mentioning enough type
 
 In terms of video/blog post content, I think the most valuable thing would be to present certain *algorithms* as opposed to code, as well as my thought process for tricky parts. I implement some parts, like the lexer, parser, and AST in an unorthodox way (at least for Rust) because I _think_ it will yield tigher bounds on performance. The lexer is guaranteed not to allocate anything other than the final `Vec` on the happy path and only allocate the string for the error on the failing path. The AST is built using slotmaps to get the compactness of an arena allocator with the memory re-use of a pool/malloc (AST rewrites often involve replacing nodes wholesale).
 
+### Progress:
+
+[ ] Front-end:
+  [ ] Lexing (DONE excluding control-flow constructs)
+  [ ] Parsing (DONE excluding control-flow constructs)
+  [ ] Type inference (Simple types)
+  [ ] Nice error-reporting
+  [ ] REPL
+[ ] Middle-"end":
+  [ ] IR
+  [ ] Optimization passes -- need to decide which ones beyond those listed below:
+[ ] Back-end (just x86 for now)
+ [ ] Instruction Selection
+ [ ] Instruciton Scheduling
+ [ ] Register Allocation
+
 ### Language Features
 
 - C.
