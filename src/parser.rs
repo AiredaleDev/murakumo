@@ -135,10 +135,10 @@ impl<'iter, 'src: 'iter> Parser<'iter, 'src> {
         // Check for assignment.
         // If it's there, go down the decl/assign path.
         let mut args = SmallVec::new();
-        if let Some(tok) = self.peek_nth(1) {
-            if matches!(tok.ty, TokenType::Equal | TokenType::Colon) {
-                args.push(self.parse_decl_assign_lhs()?);
-            }
+        if let Some(tok) = self.peek_nth(1)
+            && matches!(tok.ty, TokenType::Equal | TokenType::Colon)
+        {
+            args.push(self.parse_decl_assign_lhs()?);
         }
 
         let stmt_ty = match self.peek().map(|t| &t.ty) {
@@ -181,7 +181,7 @@ impl<'iter, 'src: 'iter> Parser<'iter, 'src> {
                     self.tokens
                         .get(self.cursor - 1)
                         .map(|tok| tok.info.clone())
-                        .unwrap_or(DebugInfo::default()),
+                        .unwrap_or_default(),
                 ));
             }
         };
@@ -192,7 +192,7 @@ impl<'iter, 'src: 'iter> Parser<'iter, 'src> {
             // Term decl!
             TokenType::Colon => {
                 let ty = match self.peek().map(|t| &t.ty) {
-                    Some(TokenType::Ident(ty_name)) => Type::from_str(ty_name),
+                    Some(&TokenType::Ident(ty_name)) => Type::from(ty_name),
                     Some(TokenType::Colon | TokenType::Equal) => Type::Hole,
                     _ => {
                         return Err(KumoError::new(
@@ -497,10 +497,10 @@ impl<'iter, 'src: 'iter> Parser<'iter, 'src> {
             .collect();
 
         // Handle return type for functions (needs to be converted to type)
-        if op == ExprOp::Func {
-            if let ASTNodeType::Ident(ty_name) = self.ast.nodes[args[1]].ty {
-                self.ast.nodes[args[1]].ty = ASTNodeType::Type(Type::from_str(ty_name.as_str()));
-            }
+        if op == ExprOp::Func
+            && let ASTNodeType::Ident(ty_name) = self.ast.nodes[args[1]].ty
+        {
+            self.ast.nodes[args[1]].ty = ASTNodeType::Type(Type::from(ty_name.as_str()));
         }
 
         let new_operand = self.ast.nodes.insert(ASTNode {

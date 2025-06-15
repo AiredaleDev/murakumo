@@ -64,7 +64,7 @@ fn main() {
     // a REPL, even ones like this. It makes scratching out your ideas much easier.
     let cli = Args::parse();
 
-    if cli.files.len() > 0 {
+    if !cli.files.is_empty() {
         for file in cli.files {
             let input = read_to_string(&file).expect("Where's that file?");
             if let Err(e) = compile(&input) {

@@ -33,8 +33,7 @@ impl Display for AST<'_> {
         let mut traversal_stack = Vec::new();
         if !self.root.is_null() {
             traversal_stack.push((0, self.root));
-            while !traversal_stack.is_empty() {
-                let (depth, curr) = traversal_stack.pop().unwrap();
+            while let Some((depth, curr)) = traversal_stack.pop() {
                 for _ in 0..depth {
                     write!(f, "| ")?;
                 }
@@ -67,7 +66,7 @@ impl<'src> ASTNode<'src> {
     }
 
     pub fn is_leaf(&self) -> bool {
-        self.args.len() == 0
+        self.args.is_empty()
     }
 }
 
@@ -358,11 +357,11 @@ fn fold_expr(ast: &mut AST, expr: NodeKey) -> Option<NodeKey> {
             _ => unreachable!(),
         };
 
-        ast.nodes.remove(expr).map(|dead_node| {
+        if let Some(dead_node) = ast.nodes.remove(expr) {
             for arg in dead_node.args {
                 ast.nodes.remove(arg);
             }
-        });
+        }
 
         Some(
             ast.nodes

@@ -38,31 +38,19 @@ pub enum Type {
 
 impl Type {
     pub fn coerces_to_int(&self) -> bool {
-        match self {
-            Self::ComptimeInt => true,
-            _ => false,
-        }
+        matches!(self, Self::ComptimeInt)
     }
 
     pub fn coerces_to_float(&self) -> bool {
-        match self {
-            Self::ComptimeInt | Self::ComptimeFloat => true,
-            _ => false,
-        }
+        matches!(self, Self::ComptimeInt | Self::ComptimeFloat)
     }
 
     pub fn is_int(&self) -> bool {
-        match self {
-            Self::Int(_) | Self::Nat(_) | Self::ComptimeInt => true,
-            _ => false,
-        }
+        matches!(self, Self::Int(_) | Self::Nat(_) | Self::ComptimeInt)
     }
 
     pub fn is_float(&self) -> bool {
-        match self {
-            Self::Float(_) | Self::ComptimeFloat => true,
-            _ => false,
-        }
+        matches!(self, Self::Float(_) | Self::ComptimeFloat)
     }
 
     pub fn is_numeric(&self) -> bool {
@@ -70,10 +58,7 @@ impl Type {
     }
 
     pub fn is_comptime(&self) -> bool {
-        match self {
-            Self::ComptimeInt | Self::ComptimeFloat => true,
-            _ => false,
-        }
+        matches!(self, Self::ComptimeInt | Self::ComptimeFloat)
     }
 
     // I guess "congruent" is more accurate but not every programmer is Terrence Tao (I wish I
@@ -93,8 +78,8 @@ impl Type {
     }
 }
 
-impl Type {
-    pub fn from_str(raw: &str) -> Self {
+impl From<&str> for Type {
+    fn from(raw: &str) -> Self {
         match raw {
             "unit" => Type::Unit,
             "int" => Type::Int(64),
@@ -160,6 +145,8 @@ fn typeof_stmt(ast: &AST, stmt: NodeKey, type_env: &mut TypeEnv, ctx: &mut Vec<N
                 block_env.insert(name, expr_ty);
             }
             // TODO: Coerce `ComptimeInt` and `ComptimeFloat` to concrete types for LHS
+            // (We should only do this for `Assign` nodes and not `Define` nodes because they are
+            // alive at runtime and not just compile time.)
             ty if ty != &expr_ty => panic!("LHS has type {ty:?} but RHS has type {expr_ty:?}"),
             _ => {}
         }
@@ -176,7 +163,7 @@ fn typeof_lhs<'env>(
     ast: &'env AST,
     lhs: NodeKey,
     type_env: &'env mut TypeEnv,
-    ctx: &mut Vec<NodeKey>,
+    ctx: &mut [NodeKey],
 ) -> &'env Type {
     use crate::ast::ExprOp;
     match &ast.nodes[lhs].ty {
@@ -187,8 +174,8 @@ fn typeof_lhs<'env>(
 
             ty
         }
-        ASTNodeType::Ident(name) => lookup_ctx(type_env, &ctx, *name)
-            .expect(&format!("Variable referenced but undeclared: {name}")),
+        ASTNodeType::Ident(name) => lookup_ctx(type_env, ctx, *name)
+            .unwrap_or_else(|| panic!("Variable referenced but undeclared: {name}")),
         not_a_var => panic!("Expected identifier or decl, found {not_a_var:?}"),
     }
 }
@@ -389,7 +376,7 @@ fn typeof_block(ast: &AST, block: NodeKey, type_env: &mut TypeEnv, ctx: &mut Vec
 
 fn lookup_ctx<'env>(
     type_env: &'env TypeEnv,
-    ctx: &Vec<NodeKey>,
+    ctx: &[NodeKey],
     var_name: Ustr,
 ) -> Option<&'env Type> {
     ctx.iter()
