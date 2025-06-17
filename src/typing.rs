@@ -189,8 +189,7 @@ fn typeof_expr(ast: &AST, expr: NodeKey, type_env: &mut TypeEnv, ctx: &mut Vec<N
                 .expect(&format!("Reference to undeclared variable {name}"))
                 .clone()
         }
-        // Literal types are trivial to copy.
-        ASTNodeType::Literal { ty, .. } => ty.clone(),
+        ASTNodeType::Literal(val) => val.ty(),
         not_expr => panic!("Expected op, identifier, or literal, found {not_expr:?}"),
     }
 }

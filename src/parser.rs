@@ -3,7 +3,7 @@ use smallvec::{SmallVec, smallvec};
 
 use crate::{
     AST, ASTNode, DebugInfo, KumoError, KumoResult, Token, Type,
-    ast::{ASTNodeType, ExprOp, StmtOp},
+    ast::{ASTNodeType, ExprOp, Lit, StmtOp},
     lexer::TokenType,
 };
 
@@ -104,10 +104,10 @@ impl<'iter, 'src: 'iter> Parser<'iter, 'src> {
                         ..
                     })
                 ) {
-                    let unit_lit = self.ast.nodes.insert(ASTNode::leaf(ASTNodeType::Literal {
-                        val: TokenType::UnitLit,
-                        ty: Type::Unit,
-                    }));
+                    let unit_lit = self
+                        .ast
+                        .nodes
+                        .insert(ASTNode::leaf(ASTNodeType::Literal(Lit::Unit)));
                     let final_stmt = self.ast.nodes.insert(ASTNode {
                         ty: ASTNodeType::Stmt(StmtOp::Pure),
                         args: smallvec![unit_lit],
@@ -277,11 +277,10 @@ impl<'iter, 'src: 'iter> Parser<'iter, 'src> {
                 ParserState::Binary
             }
             lit @ (TokenType::IntLit(_) | TokenType::FloatLit(_) | TokenType::StrLit(_)) => {
-                let lit_type = type_of_lit(&lit);
-                let k = self.ast.nodes.insert(ASTNode::leaf(ASTNodeType::Literal {
-                    val: lit,
-                    ty: lit_type,
-                }));
+                let k = self
+                    .ast
+                    .nodes
+                    .insert(ASTNode::leaf(ASTNodeType::Literal(lit.into())));
                 self.operand_stack.push(k);
                 ParserState::Binary
             }
@@ -297,12 +296,11 @@ impl<'iter, 'src: 'iter> Parser<'iter, 'src> {
             TokenType::RParen => match self.operator_stack.pop() {
                 // Empty groups are "unit" literals.
                 Some(ExprOp::Group) => {
-                    self.operand_stack.push(self.ast.nodes.insert(ASTNode::leaf(
-                        ASTNodeType::Literal {
-                            val: TokenType::UnitLit,
-                            ty: Type::Unit,
-                        },
-                    )));
+                    self.operand_stack.push(
+                        self.ast
+                            .nodes
+                            .insert(ASTNode::leaf(ASTNodeType::Literal(Lit::Unit))),
+                    );
 
                     // If we get a "unit literal", we should treat it as an operand for a func op:
                     ParserState::Binary
@@ -388,7 +386,9 @@ impl<'iter, 'src: 'iter> Parser<'iter, 'src> {
                     .remove(arg_key)
                     .expect("how did we get a key but nothing in the tree?!")
                 else {
-                    // FIXME: This is not an identifier token.
+                    // FIXME: This is not an identifier token. It has been replaced with `UnitLit`
+                    // by now because I wanted to avoid copying tokens by moving them out of the
+                    // token buffer using `take`.
                     let should_be_ident_tok = std::mem::take(&mut self.tokens[self.cursor - 1]);
                     return Err(KumoError::new(
                         "Expected identifier.".into(),
@@ -446,12 +446,7 @@ impl<'iter, 'src: 'iter> Parser<'iter, 'src> {
                 // If it was, then let's insert an arrow and a unit type!
                 if let Some(top_and) = self.operand_stack.last() {
                     let ASTNode { ty, .. } = &self.ast.nodes[*top_and];
-                    if let ASTNodeType::Expr(ExprOp::Group)
-                    | ASTNodeType::Literal {
-                        val: TokenType::UnitLit,
-                        ..
-                    } = ty
-                    {
+                    if let ASTNodeType::Expr(ExprOp::Group) | ASTNodeType::Literal(Lit::Unit) = ty {
                         self.operator_stack.push(ExprOp::Func);
                         self.operand_stack.push(
                             self.ast

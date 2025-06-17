@@ -12,6 +12,7 @@ In terms of video/blog post content, I think the most valuable thing would be to
   - [ ] Lexing (DONE excluding control-flow constructs)
   - [ ] Parsing (DONE excluding control-flow constructs)
   - [ ] Type inference (Simple types)
+    - [ ] Region parameters (honestly might just ditch this part of the project)
   - [ ] Nice error-reporting
   - [ ] REPL
 - [ ] Middle-"end":

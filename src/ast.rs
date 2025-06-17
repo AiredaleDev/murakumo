@@ -71,14 +71,47 @@ impl<'src> ASTNode<'src> {
 }
 
 // NOTE: Maybe Decl should be its own category of node.
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum ASTNodeType<'src> {
     Ident(Ustr),
-    Literal { val: TokenType<'src>, ty: Type },
+    Literal(Lit<'src>),
     Type(Type),
     Expr(ExprOp),
     Stmt(StmtOp),
     Module,
+}
+
+#[derive(Debug, Default, PartialEq)]
+pub enum Lit<'src> {
+    #[default]
+    Unit,
+    Int(i64),
+    Float(f64),
+    String(&'src str),
+}
+
+impl<'s> Lit<'s> {
+    pub fn ty(&self) -> Type {
+        match self {
+            Self::Unit => Type::Unit,
+            Self::Int(_) => Type::ComptimeInt,
+            Self::Float(_) => Type::ComptimeFloat,
+            Self::String(_) => Type::String,
+        }
+    }
+}
+
+impl<'src> From<TokenType<'src>> for Lit<'src> {
+    fn from(value: TokenType<'src>) -> Self {
+        match value {
+            TokenType::IntLit(i) => Lit::Int(i),
+            TokenType::FloatLit(f) => Lit::Float(f),
+            TokenType::StrLit(s) => Lit::String(s),
+            _ => unreachable!(
+                "We should never attempt to construct a literal out of any other tokens."
+            ),
+        }
+    }
 }
 
 // The order of the enum fields defines operator precedence
@@ -198,9 +231,9 @@ fn fold_expr(ast: &mut AST, expr: NodeKey) -> Option<NodeKey> {
         let new_lit = match &ast.nodes[expr].ty {
             ASTNodeType::Expr(op) => match op {
                 ExprOp::Negate => match &ast.nodes[ast.nodes[expr].args[0]].ty {
-                    ASTNodeType::Literal { val, .. } => match val {
-                        TokenType::IntLit(i) => TokenType::IntLit(-i),
-                        TokenType::FloatLit(i) => TokenType::FloatLit(-i),
+                    ASTNodeType::Literal(val) => match val {
+                        Lit::Int(i) => Lit::Int(-i),
+                        Lit::Float(i) => Lit::Float(-i),
                         _ => return None,
                     },
                     _ => return None,
@@ -210,24 +243,15 @@ fn fold_expr(ast: &mut AST, expr: NodeKey) -> Option<NodeKey> {
                         &ast.nodes[ast.nodes[expr].args[0]].ty,
                         &ast.nodes[ast.nodes[expr].args[1]].ty,
                     ) {
-                        (
-                            ASTNodeType::Literal { val: val1, .. },
-                            ASTNodeType::Literal { val: val2, .. },
-                        ) => match (val1, val2) {
-                            (TokenType::IntLit(i), TokenType::IntLit(j)) => {
-                                TokenType::IntLit(i + j)
+                        (ASTNodeType::Literal(val1), ASTNodeType::Literal(val2)) => {
+                            match (val1, val2) {
+                                (Lit::Int(i), Lit::Int(j)) => Lit::Int(i + j),
+                                (Lit::Float(i), Lit::Float(j)) => Lit::Float(i + j),
+                                (Lit::Int(i), Lit::Float(j)) => Lit::Float((*i as f64) + j),
+                                (Lit::Float(i), Lit::Int(j)) => Lit::Float(i + (*j as f64)),
+                                _ => return None,
                             }
-                            (TokenType::FloatLit(i), TokenType::FloatLit(j)) => {
-                                TokenType::FloatLit(i + j)
-                            }
-                            (TokenType::IntLit(i), TokenType::FloatLit(j)) => {
-                                TokenType::FloatLit((*i as f64) + j)
-                            }
-                            (TokenType::FloatLit(i), TokenType::IntLit(j)) => {
-                                TokenType::FloatLit(i + (*j as f64))
-                            }
-                            _ => return None,
-                        },
+                        }
                         _ => return None,
                     }
                 }
@@ -236,24 +260,15 @@ fn fold_expr(ast: &mut AST, expr: NodeKey) -> Option<NodeKey> {
                         &ast.nodes[ast.nodes[expr].args[0]].ty,
                         &ast.nodes[ast.nodes[expr].args[1]].ty,
                     ) {
-                        (
-                            ASTNodeType::Literal { val: val1, .. },
-                            ASTNodeType::Literal { val: val2, .. },
-                        ) => match (val1, val2) {
-                            (TokenType::IntLit(i), TokenType::IntLit(j)) => {
-                                TokenType::IntLit(i - j)
+                        (ASTNodeType::Literal(val1), ASTNodeType::Literal(val2)) => {
+                            match (val1, val2) {
+                                (Lit::Int(i), Lit::Int(j)) => Lit::Int(i - j),
+                                (Lit::Float(i), Lit::Float(j)) => Lit::Float(i - j),
+                                (Lit::Int(i), Lit::Float(j)) => Lit::Float((*i as f64) - j),
+                                (Lit::Float(i), Lit::Int(j)) => Lit::Float(i - (*j as f64)),
+                                _ => return None,
                             }
-                            (TokenType::FloatLit(i), TokenType::FloatLit(j)) => {
-                                TokenType::FloatLit(i - j)
-                            }
-                            (TokenType::IntLit(i), TokenType::FloatLit(j)) => {
-                                TokenType::FloatLit((*i as f64) - j)
-                            }
-                            (TokenType::FloatLit(i), TokenType::IntLit(j)) => {
-                                TokenType::FloatLit(i - (*j as f64))
-                            }
-                            _ => return None,
-                        },
+                        }
                         _ => return None,
                     }
                 }
@@ -262,24 +277,15 @@ fn fold_expr(ast: &mut AST, expr: NodeKey) -> Option<NodeKey> {
                         &ast.nodes[ast.nodes[expr].args[0]].ty,
                         &ast.nodes[ast.nodes[expr].args[1]].ty,
                     ) {
-                        (
-                            ASTNodeType::Literal { val: val1, .. },
-                            ASTNodeType::Literal { val: val2, .. },
-                        ) => match (val1, val2) {
-                            (TokenType::IntLit(i), TokenType::IntLit(j)) => {
-                                TokenType::IntLit(i * j)
+                        (ASTNodeType::Literal(val1), ASTNodeType::Literal(val2)) => {
+                            match (val1, val2) {
+                                (Lit::Int(i), Lit::Int(j)) => Lit::Int(i * j),
+                                (Lit::Float(i), Lit::Float(j)) => Lit::Float(i * j),
+                                (Lit::Int(i), Lit::Float(j)) => Lit::Float((*i as f64) * j),
+                                (Lit::Float(i), Lit::Int(j)) => Lit::Float(i * (*j as f64)),
+                                _ => return None,
                             }
-                            (TokenType::FloatLit(i), TokenType::FloatLit(j)) => {
-                                TokenType::FloatLit(i * j)
-                            }
-                            (TokenType::IntLit(i), TokenType::FloatLit(j)) => {
-                                TokenType::FloatLit((*i as f64) * j)
-                            }
-                            (TokenType::FloatLit(i), TokenType::IntLit(j)) => {
-                                TokenType::FloatLit(i * (*j as f64))
-                            }
-                            _ => return None,
-                        },
+                        }
                         _ => return None,
                     }
                 }
@@ -288,24 +294,15 @@ fn fold_expr(ast: &mut AST, expr: NodeKey) -> Option<NodeKey> {
                         &ast.nodes[ast.nodes[expr].args[0]].ty,
                         &ast.nodes[ast.nodes[expr].args[1]].ty,
                     ) {
-                        (
-                            ASTNodeType::Literal { val: val1, .. },
-                            ASTNodeType::Literal { val: val2, .. },
-                        ) => match (val1, val2) {
-                            (TokenType::IntLit(i), TokenType::IntLit(j)) => {
-                                TokenType::IntLit(i / j)
+                        (ASTNodeType::Literal(val1), ASTNodeType::Literal(val2)) => {
+                            match (val1, val2) {
+                                (Lit::Int(i), Lit::Int(j)) => Lit::Int(i / j),
+                                (Lit::Float(i), Lit::Float(j)) => Lit::Float(i / j),
+                                (Lit::Int(i), Lit::Float(j)) => Lit::Float((*i as f64) / j),
+                                (Lit::Float(i), Lit::Int(j)) => Lit::Float(i / (*j as f64)),
+                                _ => return None,
                             }
-                            (TokenType::FloatLit(i), TokenType::FloatLit(j)) => {
-                                TokenType::FloatLit(i / j)
-                            }
-                            (TokenType::IntLit(i), TokenType::FloatLit(j)) => {
-                                TokenType::FloatLit((*i as f64) / j)
-                            }
-                            (TokenType::FloatLit(i), TokenType::IntLit(j)) => {
-                                TokenType::FloatLit(i / (*j as f64))
-                            }
-                            _ => return None,
-                        },
+                        }
                         _ => return None,
                     }
                 }
@@ -314,21 +311,18 @@ fn fold_expr(ast: &mut AST, expr: NodeKey) -> Option<NodeKey> {
                         &ast.nodes[ast.nodes[expr].args[0]].ty,
                         &ast.nodes[ast.nodes[expr].args[1]].ty,
                     ) {
-                        (
-                            ASTNodeType::Literal { val: val1, .. },
-                            ASTNodeType::Literal { val: val2, .. },
-                        ) => match (val1, val2) {
-                            (TokenType::IntLit(i), TokenType::IntLit(j)) => {
-                                TokenType::IntLit(i % j)
+                        (ASTNodeType::Literal(val1), ASTNodeType::Literal(val2)) => {
+                            match (val1, val2) {
+                                (Lit::Int(i), Lit::Int(j)) => Lit::Int(i % j),
+                                _ => return None,
                             }
-                            _ => return None,
-                        },
+                        }
                         _ => return None,
                     }
                 }
                 ExprOp::Group if ast.nodes[expr].args.len() == 1 => {
                     let child = ast.nodes[expr].args[0];
-                    if let ASTNodeType::Literal { val, .. } = &mut ast.nodes[child].ty {
+                    if let ASTNodeType::Literal(val) = &mut ast.nodes[child].ty {
                         std::mem::take(val)
                     } else {
                         return None;
@@ -350,13 +344,6 @@ fn fold_expr(ast: &mut AST, expr: NodeKey) -> Option<NodeKey> {
             ),
         };
 
-        let ty = match new_lit {
-            TokenType::IntLit(_) => Type::ComptimeInt,
-            TokenType::FloatLit(_) => Type::ComptimeFloat,
-            TokenType::StrLit(_) => Type::String,
-            _ => unreachable!(),
-        };
-
         if let Some(dead_node) = ast.nodes.remove(expr) {
             for arg in dead_node.args {
                 ast.nodes.remove(arg);
@@ -365,7 +352,7 @@ fn fold_expr(ast: &mut AST, expr: NodeKey) -> Option<NodeKey> {
 
         Some(
             ast.nodes
-                .insert(ASTNode::leaf(ASTNodeType::Literal { val: new_lit, ty })),
+                .insert(ASTNode::leaf(ASTNodeType::Literal(new_lit))),
         )
     } else {
         None
