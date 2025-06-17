@@ -147,7 +147,7 @@ fn typeof_stmt(ast: &AST, stmt: NodeKey, type_env: &mut TypeEnv, ctx: &mut Vec<N
             // TODO: Coerce `ComptimeInt` and `ComptimeFloat` to concrete types for LHS
             // (We should only do this for `Assign` nodes and not `Define` nodes because they are
             // alive at runtime and not just compile time.)
-            ty if ty != &expr_ty => panic!("LHS has type {ty:?} but RHS has type {expr_ty:?}"),
+            ty if !ty.eq_modulo_comptime(&expr_ty) => panic!("LHS has type {ty:?} but RHS has type {expr_ty:?}"),
             _ => {}
         }
 
