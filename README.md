@@ -46,7 +46,7 @@ In terms of video/blog post content, I think the most valuable thing would be to
 ### The IR
 
 - SSA CFG -- We're iterating on tradition here, not throwing out the baby w/ the bath water.
-- Might even copy LLVM's homework and have basic-blocks "take parameters" instead of having phi-nodes.
+- Might even copy MLIR's homework and have basic-blocks "take parameters" instead of having phi-nodes.
 
 ### Target machine (since it affects backend decisions)
 
