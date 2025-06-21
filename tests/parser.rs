@@ -1,5 +1,5 @@
 use murakumo::{
-    ast::{ASTNode, ExprOp, Lit, StmtOp},
+    ast::{ASTNode, ExprOp, Lit, StmtKind},
     *,
 };
 use slotmap::DefaultKey as NodeKey;
@@ -58,7 +58,7 @@ fn mk_binop(ast: &mut AST, op: ExprOp, lhs: NodeKey, rhs: NodeKey) -> NodeKey {
 
 fn mk_pure(ast: &mut AST, expr: NodeKey) -> NodeKey {
     ast.nodes.insert(ASTNode {
-        ty: ASTNodeType::Stmt(StmtOp::Pure),
+        ty: ASTNodeType::Stmt(StmtKind::Pure),
         args: smallvec![expr],
     })
 }
@@ -81,7 +81,7 @@ pub fn parse_pemdas() {
             let mult_key = mk_binop(&mut ast, ExprOp::Multiply, four_key, one_key);
             let add_key = mk_binop(&mut ast, ExprOp::Add, mult_key, three_key);
             ast.nodes.insert(ASTNode {
-                ty: ASTNodeType::Stmt(StmtOp::Pure),
+                ty: ASTNodeType::Stmt(StmtKind::Pure),
                 args: smallvec![add_key],
             })
         };
@@ -91,7 +91,7 @@ pub fn parse_pemdas() {
             let mult_key = mk_binop(&mut ast, ExprOp::Multiply, one_key, three_key);
             let add_key = mk_binop(&mut ast, ExprOp::Add, four_key, mult_key);
             ast.nodes.insert(ASTNode {
-                ty: ASTNodeType::Stmt(StmtOp::Pure),
+                ty: ASTNodeType::Stmt(StmtKind::Pure),
                 args: smallvec![add_key],
             })
         };
@@ -102,7 +102,7 @@ pub fn parse_pemdas() {
             let group_key = mk_unop(&mut ast, ExprOp::Group, add_key);
             let mult_key = mk_binop(&mut ast, ExprOp::Multiply, four_key, group_key);
             ast.nodes.insert(ASTNode {
-                ty: ASTNodeType::Stmt(StmtOp::Pure),
+                ty: ASTNodeType::Stmt(StmtKind::Pure),
                 args: smallvec![mult_key],
             })
         };
@@ -113,7 +113,7 @@ pub fn parse_pemdas() {
             let group_key = mk_unop(&mut ast, ExprOp::Group, add_key);
             let mult_key = mk_binop(&mut ast, ExprOp::Multiply, group_key, three_key);
             ast.nodes.insert(ASTNode {
-                ty: ASTNodeType::Stmt(StmtOp::Pure),
+                ty: ASTNodeType::Stmt(StmtKind::Pure),
                 args: smallvec![mult_key],
             })
         };
@@ -156,7 +156,7 @@ pub fn parse_simple() {
             let add_key = mk_binop(&mut ast, ExprOp::Add, ten_key, twenty_key);
 
             ast.nodes.insert(ASTNode {
-                ty: ASTNodeType::Stmt(StmtOp::Define),
+                ty: ASTNodeType::Stmt(StmtKind::Define),
                 args: smallvec![decl_key, add_key],
             })
         };
@@ -172,7 +172,7 @@ pub fn parse_simple() {
             let add_key = mk_binop(&mut ast, ExprOp::Add, one_key, four_key);
 
             ast.nodes.insert(ASTNode {
-                ty: ASTNodeType::Stmt(StmtOp::Define),
+                ty: ASTNodeType::Stmt(StmtKind::Define),
                 args: smallvec![decl_key, add_key],
             })
         };
@@ -195,7 +195,7 @@ pub fn parse_simple() {
 
             let add_key = mk_binop(&mut ast, ExprOp::Add, x_name, y_name);
             let return_stmt = ast.nodes.insert(ASTNode {
-                ty: ASTNodeType::Stmt(StmtOp::Pure),
+                ty: ASTNodeType::Stmt(StmtKind::Pure),
                 args: smallvec![add_key],
             });
             let func_body = mk_unop(&mut ast, ExprOp::Block, return_stmt);
@@ -208,7 +208,7 @@ pub fn parse_simple() {
             });
 
             ast.nodes.insert(ASTNode {
-                ty: ASTNodeType::Stmt(StmtOp::Define),
+                ty: ASTNodeType::Stmt(StmtKind::Define),
                 args: smallvec![decl_key, func_lit],
             })
         };
@@ -240,7 +240,7 @@ pub fn parse_simple() {
                     let init_val = mk_lit(&mut ast, Lit::Int(12));
 
                     let scoped_stmt = ast.nodes.insert(ASTNode {
-                        ty: ASTNodeType::Stmt(StmtOp::Assign),
+                        ty: ASTNodeType::Stmt(StmtKind::Assign),
                         args: smallvec![scoped_decl, init_val],
                     });
 
@@ -270,7 +270,7 @@ pub fn parse_simple() {
                 let res_decl = mk_binop(&mut ast, ExprOp::Decl, res_name, res_ty);
 
                 let add_call_stmt = ast.nodes.insert(ASTNode {
-                    ty: ASTNodeType::Stmt(StmtOp::Assign),
+                    ty: ASTNodeType::Stmt(StmtKind::Assign),
                     args: smallvec![res_decl, call_add],
                 });
 
@@ -299,7 +299,7 @@ pub fn parse_simple() {
             });
 
             ast.nodes.insert(ASTNode {
-                ty: ASTNodeType::Stmt(StmtOp::Define),
+                ty: ASTNodeType::Stmt(StmtKind::Define),
                 args: smallvec![decl_key, func_lit],
             })
         };
