@@ -1,0 +1,19 @@
+// No support for arrays or structs yet...
+// For now, this is a silly program that will loop forever!
+child :: (t: TreeNode) -> TreeNode {
+    t
+}
+
+print :: (x: int) {}
+
+visit :: (t: TreeNode) {
+    inner :: (t: TreeNode, depth: int) {
+        print(depth);
+	// wow I just realized we don't support recursion either
+	// because the typechecker registers the name of the LHS after
+	// checking the body lol
+        // inner(t, depth+1);
+    }
+
+    inner(t, 0);
+}

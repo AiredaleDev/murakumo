@@ -44,7 +44,8 @@ pub enum TokenType<'src> {
     RCurly,
 
     // Program Constructs
-    Func,
+    If,
+    Else,
 
     // Misc
     Semicolon,
@@ -226,7 +227,8 @@ impl<'iter, 'src: 'iter> Lexer<'iter, 'src> {
             .expect("We got misaligned here, not valid UTF-8. This should never happen.");
 
         match str_lit {
-            "func" => self.token(TokenType::Func).unwrap(),
+            "if" => self.token(TokenType::If).unwrap(),
+            "else" => self.token(TokenType::Else).unwrap(),
             s => self.token(TokenType::Ident(s)).unwrap(),
         }
     }

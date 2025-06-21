@@ -13,12 +13,19 @@ fn assert_ast_eq(ast1: &AST, ast2: &AST) {
 }
 
 fn assert_node_eq(ast1: &AST, ast2: &AST, node1: NodeKey, node2: NodeKey) {
-    assert_eq!(ast1.nodes[node1].ty, ast2.nodes[node2].ty, "Got AST:\n{ast2}\nNodeMap = {:#?}\nLHS Children = {:?}\nRHS Children = {:?}", ast2.nodes, ast1.nodes[node1].args, ast2.nodes[node2].args);
+    assert_eq!(
+        ast1.nodes[node1].ty, ast2.nodes[node2].ty,
+        "Got AST:\n{ast2}\nNodeMap = {:#?}\nLHS Children = {:?}\nRHS Children = {:?}",
+        ast2.nodes, ast1.nodes[node1].args, ast2.nodes[node2].args
+    );
     assert_eq!(ast1.nodes[node1].args.len(), ast2.nodes[node2].args.len());
-    for (n1, n2) in ast1.nodes[node1].args.iter().zip(ast2.nodes[node2].args.iter()) {
+    for (n1, n2) in ast1.nodes[node1]
+        .args
+        .iter()
+        .zip(ast2.nodes[node2].args.iter())
+    {
         assert_node_eq(ast1, ast2, *n1, *n2);
     }
-
 }
 
 // Maybe I'll make these part of the main codebase.
@@ -240,23 +247,32 @@ pub fn parse_simple() {
                     let trailing_unit = mk_lit(&mut ast, Lit::Unit);
                     let tail = mk_pure(&mut ast, trailing_unit);
 
-                    let block_node = ast.nodes.insert(ASTNode { ty: ASTNodeType::Expr(ExprOp::Block), args: smallvec![scoped_stmt, tail] });
+                    let block_node = ast.nodes.insert(ASTNode {
+                        ty: ASTNodeType::Expr(ExprOp::Block),
+                        args: smallvec![scoped_stmt, tail],
+                    });
 
                     mk_pure(&mut ast, block_node)
                 };
-                
+
                 let three_two = mk_lit(&mut ast, Lit::Int(32));
                 let six_four = mk_lit(&mut ast, Lit::Int(64));
                 let func_name = mk_ident(&mut ast, "add".into());
                 let first_summand = mk_binop(&mut ast, ExprOp::Multiply, three_two, three_two);
                 let second_summand = mk_binop(&mut ast, ExprOp::Multiply, six_four, six_four);
-                let call_add = ast.nodes.insert(ASTNode { ty: ASTNodeType::Expr(ExprOp::Call), args: smallvec![func_name, first_summand, second_summand] });
-                
+                let call_add = ast.nodes.insert(ASTNode {
+                    ty: ASTNodeType::Expr(ExprOp::Call),
+                    args: smallvec![func_name, first_summand, second_summand],
+                });
+
                 let res_name = mk_ident(&mut ast, "result".into());
                 let res_ty = mk_type(&mut ast, Type::Hole);
                 let res_decl = mk_binop(&mut ast, ExprOp::Decl, res_name, res_ty);
-                
-                let add_call_stmt = ast.nodes.insert(ASTNode { ty: ASTNodeType::Stmt(StmtOp::Assign), args: smallvec![res_decl, call_add] });
+
+                let add_call_stmt = ast.nodes.insert(ASTNode {
+                    ty: ASTNodeType::Stmt(StmtOp::Assign),
+                    args: smallvec![res_decl, call_add],
+                });
 
                 let thirty_e_2 = mk_lit(&mut ast, Lit::Float(30e2));
                 let thirty_stmt = mk_pure(&mut ast, thirty_e_2);
@@ -266,7 +282,14 @@ pub fn parse_simple() {
 
                 ast.nodes.insert(ASTNode {
                     ty: ASTNodeType::Expr(ExprOp::Block),
-                    args: smallvec![empty_stmt, zero_stmt, subscope, add_call_stmt, thirty_stmt, tail],
+                    args: smallvec![
+                        empty_stmt,
+                        zero_stmt,
+                        subscope,
+                        add_call_stmt,
+                        thirty_stmt,
+                        tail
+                    ],
                 })
             };
 

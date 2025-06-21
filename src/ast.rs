@@ -25,6 +25,10 @@ impl<'src> AST<'src> {
         f(self, &mut args);
         self.nodes[node_key].args = args;
     }
+
+    pub fn child(&self, node_key: NodeKey, n: usize) -> &ASTNode<'src> {
+        &self.nodes[self.nodes[node_key].args[n]]
+    }
 }
 
 impl Display for AST<'_> {
@@ -38,7 +42,7 @@ impl Display for AST<'_> {
                     write!(f, "| ")?;
                 }
                 let node = &self.nodes[curr];
-                writeln!(f, "{:?}", node.ty)?;
+                writeln!(f, "{:?}                {curr:?}", node.ty)?;
                 traversal_stack.extend(node.args.iter().rev().map(|v| (depth + 1, *v)));
             }
 
@@ -77,7 +81,7 @@ pub enum ASTNodeType<'src> {
     Literal(Lit<'src>),
     Type(Type),
     Expr(ExprOp),
-    Stmt(StmtOp),
+    Stmt(StmtKind),
     Module,
 }
 
@@ -152,10 +156,16 @@ impl ExprOp {
             _ => 2,
         }
     }
+
+    pub fn is_arithmetic(&self) -> bool {
+        matches!(self, Self::Add | Self::Subtract | Self::Multiply | Self::Divide | Self::Mod | Self::Negate)
+    }
+
+    // When I add bools I'm going to want to have an "is logical"
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum StmtOp {
+pub enum StmtKind {
     // Just `expr;` or `;`.
     // These may be "pure" but that doesn't mean the
     // code they contain has no side-effects! They are, however,
@@ -193,8 +203,8 @@ fn fold_stmt(ast: &mut AST, stmt: NodeKey) {
     };
 
     let redex_ind = match stmt_op {
-        StmtOp::Pure => 0,
-        StmtOp::Assign | StmtOp::Define => 1,
+        StmtKind::Pure => 0,
+        StmtKind::Assign | StmtKind::Define => 1,
     };
 
     ast.with_args(stmt, |ast, args| {
@@ -230,7 +240,7 @@ fn fold_expr(ast: &mut AST, expr: NodeKey) -> Option<NodeKey> {
 
         let new_lit = match &ast.nodes[expr].ty {
             ASTNodeType::Expr(op) => match op {
-                ExprOp::Negate => match &ast.nodes[ast.nodes[expr].args[0]].ty {
+                ExprOp::Negate => match &ast.child(expr, 0).ty {
                     ASTNodeType::Literal(val) => match val {
                         Lit::Int(i) => Lit::Int(-i),
                         Lit::Float(i) => Lit::Float(-i),
@@ -238,88 +248,63 @@ fn fold_expr(ast: &mut AST, expr: NodeKey) -> Option<NodeKey> {
                     },
                     _ => return None,
                 },
-                ExprOp::Add => {
-                    match (
-                        &ast.nodes[ast.nodes[expr].args[0]].ty,
-                        &ast.nodes[ast.nodes[expr].args[1]].ty,
-                    ) {
-                        (ASTNodeType::Literal(val1), ASTNodeType::Literal(val2)) => {
-                            match (val1, val2) {
-                                (Lit::Int(i), Lit::Int(j)) => Lit::Int(i + j),
-                                (Lit::Float(i), Lit::Float(j)) => Lit::Float(i + j),
-                                (Lit::Int(i), Lit::Float(j)) => Lit::Float((*i as f64) + j),
-                                (Lit::Float(i), Lit::Int(j)) => Lit::Float(i + (*j as f64)),
-                                _ => return None,
-                            }
+                ExprOp::Add => match (&ast.child(expr, 0).ty, &ast.child(expr, 1).ty) {
+                    (ASTNodeType::Literal(val1), ASTNodeType::Literal(val2)) => {
+                        match (val1, val2) {
+                            (Lit::Int(i), Lit::Int(j)) => Lit::Int(i + j),
+                            (Lit::Float(i), Lit::Float(j)) => Lit::Float(i + j),
+                            (Lit::Int(i), Lit::Float(j)) => Lit::Float((*i as f64) + j),
+                            (Lit::Float(i), Lit::Int(j)) => Lit::Float(i + (*j as f64)),
+                            _ => return None,
                         }
-                        _ => return None,
                     }
-                }
-                ExprOp::Subtract => {
-                    match (
-                        &ast.nodes[ast.nodes[expr].args[0]].ty,
-                        &ast.nodes[ast.nodes[expr].args[1]].ty,
-                    ) {
-                        (ASTNodeType::Literal(val1), ASTNodeType::Literal(val2)) => {
-                            match (val1, val2) {
-                                (Lit::Int(i), Lit::Int(j)) => Lit::Int(i - j),
-                                (Lit::Float(i), Lit::Float(j)) => Lit::Float(i - j),
-                                (Lit::Int(i), Lit::Float(j)) => Lit::Float((*i as f64) - j),
-                                (Lit::Float(i), Lit::Int(j)) => Lit::Float(i - (*j as f64)),
-                                _ => return None,
-                            }
+                    _ => return None,
+                },
+                ExprOp::Subtract => match (&ast.child(expr, 0).ty, &ast.child(expr, 1).ty) {
+                    (ASTNodeType::Literal(val1), ASTNodeType::Literal(val2)) => {
+                        match (val1, val2) {
+                            (Lit::Int(i), Lit::Int(j)) => Lit::Int(i - j),
+                            (Lit::Float(i), Lit::Float(j)) => Lit::Float(i - j),
+                            (Lit::Int(i), Lit::Float(j)) => Lit::Float((*i as f64) - j),
+                            (Lit::Float(i), Lit::Int(j)) => Lit::Float(i - (*j as f64)),
+                            _ => return None,
                         }
-                        _ => return None,
                     }
-                }
-                ExprOp::Multiply => {
-                    match (
-                        &ast.nodes[ast.nodes[expr].args[0]].ty,
-                        &ast.nodes[ast.nodes[expr].args[1]].ty,
-                    ) {
-                        (ASTNodeType::Literal(val1), ASTNodeType::Literal(val2)) => {
-                            match (val1, val2) {
-                                (Lit::Int(i), Lit::Int(j)) => Lit::Int(i * j),
-                                (Lit::Float(i), Lit::Float(j)) => Lit::Float(i * j),
-                                (Lit::Int(i), Lit::Float(j)) => Lit::Float((*i as f64) * j),
-                                (Lit::Float(i), Lit::Int(j)) => Lit::Float(i * (*j as f64)),
-                                _ => return None,
-                            }
+                    _ => return None,
+                },
+                ExprOp::Multiply => match (&ast.child(expr, 0).ty, &ast.child(expr, 1).ty) {
+                    (ASTNodeType::Literal(val1), ASTNodeType::Literal(val2)) => {
+                        match (val1, val2) {
+                            (Lit::Int(i), Lit::Int(j)) => Lit::Int(i * j),
+                            (Lit::Float(i), Lit::Float(j)) => Lit::Float(i * j),
+                            (Lit::Int(i), Lit::Float(j)) => Lit::Float((*i as f64) * j),
+                            (Lit::Float(i), Lit::Int(j)) => Lit::Float(i * (*j as f64)),
+                            _ => return None,
                         }
-                        _ => return None,
                     }
-                }
-                ExprOp::Divide => {
-                    match (
-                        &ast.nodes[ast.nodes[expr].args[0]].ty,
-                        &ast.nodes[ast.nodes[expr].args[1]].ty,
-                    ) {
-                        (ASTNodeType::Literal(val1), ASTNodeType::Literal(val2)) => {
-                            match (val1, val2) {
-                                (Lit::Int(i), Lit::Int(j)) => Lit::Int(i / j),
-                                (Lit::Float(i), Lit::Float(j)) => Lit::Float(i / j),
-                                (Lit::Int(i), Lit::Float(j)) => Lit::Float((*i as f64) / j),
-                                (Lit::Float(i), Lit::Int(j)) => Lit::Float(i / (*j as f64)),
-                                _ => return None,
-                            }
+                    _ => return None,
+                },
+                ExprOp::Divide => match (&ast.child(expr, 0).ty, &ast.child(expr, 1).ty) {
+                    (ASTNodeType::Literal(val1), ASTNodeType::Literal(val2)) => {
+                        match (val1, val2) {
+                            (Lit::Int(i), Lit::Int(j)) => Lit::Int(i / j),
+                            (Lit::Float(i), Lit::Float(j)) => Lit::Float(i / j),
+                            (Lit::Int(i), Lit::Float(j)) => Lit::Float((*i as f64) / j),
+                            (Lit::Float(i), Lit::Int(j)) => Lit::Float(i / (*j as f64)),
+                            _ => return None,
                         }
-                        _ => return None,
                     }
-                }
-                ExprOp::Mod => {
-                    match (
-                        &ast.nodes[ast.nodes[expr].args[0]].ty,
-                        &ast.nodes[ast.nodes[expr].args[1]].ty,
-                    ) {
-                        (ASTNodeType::Literal(val1), ASTNodeType::Literal(val2)) => {
-                            match (val1, val2) {
-                                (Lit::Int(i), Lit::Int(j)) => Lit::Int(i % j),
-                                _ => return None,
-                            }
+                    _ => return None,
+                },
+                ExprOp::Mod => match (&ast.child(expr, 0).ty, &ast.child(expr, 1).ty) {
+                    (ASTNodeType::Literal(val1), ASTNodeType::Literal(val2)) => {
+                        match (val1, val2) {
+                            (Lit::Int(i), Lit::Int(j)) => Lit::Int(i % j),
+                            _ => return None,
                         }
-                        _ => return None,
                     }
-                }
+                    _ => return None,
+                },
                 ExprOp::Group if ast.nodes[expr].args.len() == 1 => {
                     let child = ast.nodes[expr].args[0];
                     if let ASTNodeType::Literal(val) = &mut ast.nodes[child].ty {

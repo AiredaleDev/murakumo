@@ -8,6 +8,12 @@ use crate::{AST, ASTNodeType};
 // My thought of how I'll do this is to return Type::Hole everywhere checking
 // and inference fails after printing the error message to the screen.
 // TODO: Consider `Cow` to reduce the amount of cloning we do?
+// TODO: Support recursion -- this will require I add a special case to stmt
+// and expr s.t. funcs introduce their names to the scope that encloses their definitions
+// immediately as opposed to normal defintions where we want them to wait.
+// We might also be able to support this by doing a first-pass over all `Define` nodes in a
+// block/module and registering them. This would also allow for calling a function that is defined
+// after somewhere it is called (a basic convenience modern programming languages provide)
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Type {
@@ -59,6 +65,14 @@ impl Type {
 
     pub fn is_comptime(&self) -> bool {
         matches!(self, Self::ComptimeInt | Self::ComptimeFloat)
+    }
+
+    pub fn make_concrete(self) -> Self {
+        match self {
+            Self::ComptimeInt => Self::Int(64),
+            Self::ComptimeFloat => Self::Float(64),
+            t => t,
+        }
     }
 
     // I guess "congruent" is more accurate but not every programmer is Terrence Tao (I wish I
@@ -115,24 +129,25 @@ pub fn infer_types(ast: &AST) -> TypeEnv {
 }
 
 fn typeof_stmt(ast: &AST, stmt: NodeKey, type_env: &mut TypeEnv, ctx: &mut Vec<NodeKey>) -> Type {
-    use crate::ast::StmtOp;
+    use crate::ast::StmtKind;
     let ASTNodeType::Stmt(node_kind) = ast.nodes[stmt].ty else {
         panic!("Bad AST -- got {:?} instead of stmt.", ast.nodes[stmt]);
     };
 
     let expr_node = ast.nodes[stmt].args[match node_kind {
-        StmtOp::Pure => 0,
+        StmtKind::Pure => 0,
         _ => 1,
     }];
 
     let expr_ty = typeof_expr(ast, expr_node, type_env, ctx);
-    if node_kind != StmtOp::Pure {
+    if node_kind != StmtKind::Pure {
         // There are two cases: decl or just assignment.
         // For decl nodes, we introduce the defintion. For assignment, we assert that we have the
         // definition and that its type matches the RHS.
         let lhs_key = ast.nodes[stmt].args[0];
         let ty_lhs = typeof_lhs(ast, lhs_key, type_env, ctx);
         match ty_lhs {
+            // Encountered a `:=` or `::`
             Type::Hole => {
                 let name_key = ast.nodes[lhs_key].args[0];
                 let ASTNodeType::Ident(name) = ast.nodes[name_key].ty else {
@@ -142,12 +157,21 @@ fn typeof_stmt(ast: &AST, stmt: NodeKey, type_env: &mut TypeEnv, ctx: &mut Vec<N
                 let block_env = type_env
                     .get_mut(scope)
                     .expect("What, it's on the stack but not in this map?");
-                block_env.insert(name, expr_ty);
+
+                match node_kind {
+                    StmtKind::Define => {
+                        block_env.insert(name, expr_ty);
+                    }
+                    StmtKind::Assign => {
+                        let var_ty = expr_ty.make_concrete();
+                        block_env.insert(name, var_ty);
+                    }
+                    StmtKind::Pure => unreachable!(),
+                }
             }
-            // TODO: Coerce `ComptimeInt` and `ComptimeFloat` to concrete types for LHS
-            // (We should only do this for `Assign` nodes and not `Define` nodes because they are
-            // alive at runtime and not just compile time.)
-            ty if !ty.eq_modulo_comptime(&expr_ty) => panic!("LHS has type {ty:?} but RHS has type {expr_ty:?}"),
+            ty if !ty.eq_modulo_comptime(&expr_ty) => {
+                panic!("LHS has type {ty:?} but RHS has type {expr_ty:?}")
+            }
             _ => {}
         }
 
@@ -238,6 +262,7 @@ fn typeof_op(ast: &AST, expr: NodeKey, type_env: &mut TypeEnv, ctx: &mut Vec<Nod
                 (Type::ComptimeInt | Type::ComptimeFloat, Type::ComptimeFloat) => {
                     Type::ComptimeFloat
                 }
+                (t1, t2) if t1.eq_modulo_comptime(&t2) => t1,
                 (t1, t2) => panic!("Type mismatch -- lhs: {t1:?}, rhs: {t2:?}"),
             }
         }
@@ -356,6 +381,17 @@ fn typeof_op(ast: &AST, expr: NodeKey, type_env: &mut TypeEnv, ctx: &mut Vec<Nod
     }
 }
 
+pub fn lookup_ctx<'env>(
+    type_env: &'env TypeEnv,
+    ctx: &[NodeKey],
+    var_name: Ustr,
+) -> Option<&'env Type> {
+    ctx.iter()
+        .rev()
+        .flat_map(|scope| type_env[scope].get(&var_name))
+        .next()
+}
+
 // Here, we introduce a new scope.
 fn typeof_block(ast: &AST, block: NodeKey, type_env: &mut TypeEnv, ctx: &mut Vec<NodeKey>) -> Type {
     // If we're a function body we just want to use the same env as the parameters.
@@ -371,15 +407,4 @@ fn typeof_block(ast: &AST, block: NodeKey, type_env: &mut TypeEnv, ctx: &mut Vec
     ctx.pop();
 
     tail_type
-}
-
-fn lookup_ctx<'env>(
-    type_env: &'env TypeEnv,
-    ctx: &[NodeKey],
-    var_name: Ustr,
-) -> Option<&'env Type> {
-    ctx.iter()
-        .rev()
-        .flat_map(|scope| type_env[scope].get(&var_name))
-        .next()
 }

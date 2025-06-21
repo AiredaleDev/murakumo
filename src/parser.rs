@@ -3,7 +3,7 @@ use smallvec::{SmallVec, smallvec};
 
 use crate::{
     AST, ASTNode, DebugInfo, KumoError, KumoResult, Token, Type,
-    ast::{ASTNodeType, ExprOp, Lit, StmtOp},
+    ast::{ASTNodeType, ExprOp, Lit, StmtKind},
     lexer::TokenType,
 };
 
@@ -109,7 +109,7 @@ impl<'iter, 'src: 'iter> Parser<'iter, 'src> {
                         .nodes
                         .insert(ASTNode::leaf(ASTNodeType::Literal(Lit::Unit)));
                     let final_stmt = self.ast.nodes.insert(ASTNode {
-                        ty: ASTNodeType::Stmt(StmtOp::Pure),
+                        ty: ASTNodeType::Stmt(StmtKind::Pure),
                         args: smallvec![unit_lit],
                     });
                     stmts.push(final_stmt);
@@ -144,13 +144,13 @@ impl<'iter, 'src: 'iter> Parser<'iter, 'src> {
         let stmt_ty = match self.peek().map(|t| &t.ty) {
             Some(TokenType::Equal) => {
                 self.next();
-                StmtOp::Assign
+                StmtKind::Assign
             }
             Some(TokenType::Colon) => {
                 self.next();
-                StmtOp::Define
+                StmtKind::Define
             }
-            _ => StmtOp::Pure,
+            _ => StmtKind::Pure,
         };
 
         if matches!(self.peek(), Some(Token{ ty, ..}) if stop_at.iter().all(|s| s != ty)) {
