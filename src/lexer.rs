@@ -14,6 +14,7 @@ pub enum TokenType<'src> {
     UnitLit, // Never constructed in this module, see parser.
     IntLit(i64),
     FloatLit(f64),
+    BoolLit(bool),
     Ident(&'src str),
     StrLit(&'src str),
 
@@ -27,8 +28,17 @@ pub enum TokenType<'src> {
     Star,
     Slash,
     Percent,
-    DoubleEq,
+
+    // Bitwise and Boolean Operators
+    Tilde,
+    Bar,
+    Amper,
     Bang,
+    DoubleBar,
+    DoubleAmper,
+
+    // Comparison
+    DoubleEq,
     BangEq,
     Less,
     LessEq,
@@ -229,6 +239,8 @@ impl<'iter, 'src: 'iter> Lexer<'iter, 'src> {
         match str_lit {
             "if" => self.token(TokenType::If).unwrap(),
             "else" => self.token(TokenType::Else).unwrap(),
+            "true" => self.token(TokenType::BoolLit(true)).unwrap(),
+            "false" => self.token(TokenType::BoolLit(false)).unwrap(),
             s => self.token(TokenType::Ident(s)).unwrap(),
         }
     }
@@ -274,6 +286,8 @@ impl<'iter, 'src: 'iter> Iterator for Lexer<'iter, 'src> {
                 }
             }
             '%' => self.token(TokenType::Percent),
+            '|' => self.try_match_two(['|'], TokenType::Bar, [TokenType::DoubleBar]),
+            '&' => self.try_match_two(['&'], TokenType::Amper, [TokenType::DoubleAmper]),
             '=' => self.try_match_two(
                 ['=', '>'],
                 TokenType::Equal,

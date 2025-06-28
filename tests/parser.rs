@@ -311,3 +311,12 @@ pub fn parse_simple() {
 
     assert_ast_eq(&parsed_ast, &expected_ast);
 }
+
+#[test]
+pub fn parse_branching() {
+    let src_code = read_to_string("tests/test_progs/branching.ku").expect("Whoops, wrong path!");
+    let tokens = lexer::lex(&src_code).expect("I expect this to lex correctly!");
+    let parsed_ast = parser::parse(tokens).expect("I expect this to parse correctly!");
+
+    assert!(false);
+}

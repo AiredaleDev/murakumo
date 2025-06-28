@@ -1,0 +1,11 @@
+illogical :: (x: int) -> nat {
+    x
+}
+
+also_illogical :: (s: string) -> string {
+    s - 5
+}
+
+main :: () {
+    x := 1 + "ahoy";
+}

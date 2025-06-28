@@ -4,6 +4,13 @@ use ustr::{Ustr, UstrMap};
 
 use crate::{AST, ASTNodeType};
 
+macro_rules! fail_typecheck {
+    ($($arg:tt)*) => {
+        eprintln!($($arg)*);
+        return Type::Hole;
+    };
+}
+
 // TODO: Report errors nicely instead of panicking at first failure.
 // My thought of how I'll do this is to return Type::Hole everywhere checking
 // and inference fails after printing the error message to the screen.
@@ -20,6 +27,7 @@ pub enum Type {
     // For type inference.
     Hole,
     Unit,
+    Bool,
     // Arbitrary precision integers, with a notion of "packed struct."
     // In non-packed environments, APInts are rounded up to their word-aligned
     // size.
@@ -98,8 +106,10 @@ impl From<&str> for Type {
             "unit" => Type::Unit,
             "int" => Type::Int(64),
             "nat" => Type::Nat(64),
+            "bool" => Type::Bool,
             "f32" => Type::Float(32),
             "f64" => Type::Float(64),
+            "string" => Type::String,
             name => Type::Custom(name.into()),
         }
     }
@@ -115,17 +125,18 @@ pub type TypeEnv = HashMap<NodeKey, UstrMap<Type>>;
 /// Constructs a `name : type` environment for the top-level module node and blocks.
 /// The typing environment relates each AST module and block nodes' keys with a map
 /// that contains the definitions they introduce.
-pub fn infer_types(ast: &AST) -> TypeEnv {
+pub fn infer_types(ast: &AST) -> Option<TypeEnv> {
     // "Root" node is always a "module" node.
     let mut type_env = TypeEnv::default();
     // The list of defintions to search when inferring types.
     let mut ctx = vec![ast.root];
     type_env.insert(ast.root, UstrMap::default());
+    let mut tc_failed = false;
     for a in &ast.nodes[ast.root].args {
-        typeof_stmt(ast, *a, &mut type_env, &mut ctx);
+        tc_failed = typeof_stmt(ast, *a, &mut type_env, &mut ctx) == Type::Hole;
     }
 
-    type_env
+    if !tc_failed { Some(type_env) } else { None }
 }
 
 fn typeof_stmt(ast: &AST, stmt: NodeKey, type_env: &mut TypeEnv, ctx: &mut Vec<NodeKey>) -> Type {
@@ -134,12 +145,20 @@ fn typeof_stmt(ast: &AST, stmt: NodeKey, type_env: &mut TypeEnv, ctx: &mut Vec<N
         panic!("Bad AST -- got {:?} instead of stmt.", ast.nodes[stmt]);
     };
 
+    if ast.nodes[stmt].args.is_empty() {
+        return Type::Unit;
+    }
+
     let expr_node = ast.nodes[stmt].args[match node_kind {
         StmtKind::Pure => 0,
         _ => 1,
     }];
 
     let expr_ty = typeof_expr(ast, expr_node, type_env, ctx);
+    if expr_ty == Type::Hole {
+        return Type::Hole;
+    }
+
     if node_kind != StmtKind::Pure {
         // There are two cases: decl or just assignment.
         // For decl nodes, we introduce the defintion. For assignment, we assert that we have the
@@ -149,10 +168,7 @@ fn typeof_stmt(ast: &AST, stmt: NodeKey, type_env: &mut TypeEnv, ctx: &mut Vec<N
         match ty_lhs {
             // Encountered a `:=` or `::`
             Type::Hole => {
-                let name_key = ast.nodes[lhs_key].args[0];
-                let ASTNodeType::Ident(name) = ast.nodes[name_key].ty else {
-                    panic!("Expected identifier, found something else...");
-                };
+                let name = ast.get_ident(lhs_key);
                 let scope = ctx.last().expect("The root node should never be popped.");
                 let block_env = type_env
                     .get_mut(scope)
@@ -170,7 +186,7 @@ fn typeof_stmt(ast: &AST, stmt: NodeKey, type_env: &mut TypeEnv, ctx: &mut Vec<N
                 }
             }
             ty if !ty.eq_modulo_comptime(&expr_ty) => {
-                panic!("LHS has type {ty:?} but RHS has type {expr_ty:?}")
+                fail_typecheck!("LHS has type {ty:?} but RHS has type {expr_ty:?}");
             }
             _ => {}
         }
@@ -192,7 +208,7 @@ fn typeof_lhs<'env>(
     use crate::ast::ExprOp;
     match &ast.nodes[lhs].ty {
         ASTNodeType::Expr(ExprOp::Decl) => {
-            let ASTNodeType::Type(ref ty) = ast.nodes[ast.nodes[lhs].args[1]].ty else {
+            let ASTNodeType::Type(ref ty) = ast.child(lhs, 1).ty else {
                 panic!("Expected type, found {:?}", ast.nodes[lhs].ty);
             };
 
@@ -208,10 +224,10 @@ fn typeof_expr(ast: &AST, expr: NodeKey, type_env: &mut TypeEnv, ctx: &mut Vec<N
     match &ast.nodes[expr].ty {
         ASTNodeType::Expr(_) => typeof_op(ast, expr, type_env, ctx),
         ASTNodeType::Ident(name) => {
-            // Function types are the only thing that's messing this up...
-            lookup_ctx(type_env, ctx, *name)
-                .expect(&format!("Reference to undeclared variable {name}"))
-                .clone()
+            let Some(ty) = lookup_ctx(type_env, ctx, *name) else {
+                fail_typecheck!("Reference to undeclared variable {name}");
+            };
+            ty.clone()
         }
         ASTNodeType::Literal(val) => val.ty(),
         not_expr => panic!("Expected op, identifier, or literal, found {not_expr:?}"),
@@ -235,7 +251,15 @@ fn typeof_op(ast: &AST, expr: NodeKey, type_env: &mut TypeEnv, ctx: &mut Vec<Nod
             if child_ty.is_numeric() {
                 child_ty
             } else {
-                panic!("Expected numeric type, found {child_ty:?}");
+                fail_typecheck!("Expected numeric type, found {child_ty:?}");
+            }
+        }
+        ExprOp::Not => {
+            let child_ty = typeof_expr(ast, ast.nodes[expr].args[0], type_env, ctx);
+            if child_ty == Type::Bool {
+                child_ty
+            } else {
+                fail_typecheck!("Expected numeric type, found {child_ty:?}");
             }
         }
         ExprOp::Add | ExprOp::Subtract | ExprOp::Multiply | ExprOp::Divide => {
@@ -263,7 +287,9 @@ fn typeof_op(ast: &AST, expr: NodeKey, type_env: &mut TypeEnv, ctx: &mut Vec<Nod
                     Type::ComptimeFloat
                 }
                 (t1, t2) if t1.eq_modulo_comptime(&t2) => t1,
-                (t1, t2) => panic!("Type mismatch -- lhs: {t1:?}, rhs: {t2:?}"),
+                (t1, t2) => {
+                    fail_typecheck!("Type mismatch -- lhs: {t1:?}, rhs: {t2:?}");
+                }
             }
         }
         ExprOp::Mod => {
@@ -273,12 +299,36 @@ fn typeof_op(ast: &AST, expr: NodeKey, type_env: &mut TypeEnv, ctx: &mut Vec<Nod
                 (Type::Int(sz1), Type::Int(sz2)) => Type::Int(sz1.max(sz2)),
                 (Type::Int(sz1), Type::ComptimeInt) => Type::Int(sz1),
                 (Type::ComptimeInt, Type::ComptimeInt) => Type::ComptimeInt,
-                (t1, t2) => panic!("Modulo expects integers, got {t1:?} % {t2:?} instead."),
+                (t1, t2) => {
+                    fail_typecheck!("Modulo expects integers, got {t1:?} % {t2:?} instead.");
+                }
             }
+        }
+        ExprOp::And | ExprOp::Or => {
+            let lhs_ty = typeof_expr(ast, ast.nodes[expr].args[0], type_env, ctx);
+            let rhs_ty = typeof_expr(ast, ast.nodes[expr].args[1], type_env, ctx);
+            if lhs_ty != Type::Bool {
+                fail_typecheck!("Expected boolean on LHS, got {lhs_ty:?}");
+            }
+
+            if rhs_ty != Type::Bool {
+                fail_typecheck!("Expected boolean on RHS, got {rhs_ty:?}");
+            }
+
+            Type::Bool
+        }
+        ExprOp::Eq | ExprOp::Neq => {
+            let lhs_ty = typeof_expr(ast, ast.nodes[expr].args[0], type_env, ctx);
+            let rhs_ty = typeof_expr(ast, ast.nodes[expr].args[1], type_env, ctx);
+            // TODO: Handle differing integer sizes nicely because casting is very annoying.
+            if !lhs_ty.eq_modulo_comptime(&rhs_ty) {
+                fail_typecheck!("Trying to compare two distinct types: {lhs_ty:?}, {rhs_ty:?}");
+            }
+            Type::Bool
         }
         ExprOp::Func => {
             // Get the parameters into the environment
-            let [args_key, ret_key, body_key] = ast.nodes[expr].args[0..3] else {
+            let [args_key, ret_key, body_key] = ast.nodes[expr].args[..3] else {
                 panic!("Got a func node without three children, this shouldn't happen!");
             };
             type_env.insert(body_key, UstrMap::default());
@@ -308,7 +358,7 @@ fn typeof_op(ast: &AST, expr: NodeKey, type_env: &mut TypeEnv, ctx: &mut Vec<Nod
                 arg_types.push(body_ret_ty.clone());
                 Type::Func(arg_types)
             } else {
-                panic!(
+                fail_typecheck!(
                     "Type mismatch! Function body returns {body_ret_ty:?} but expected {sig_ret_ty:?}"
                 );
             }
@@ -349,7 +399,7 @@ fn typeof_op(ast: &AST, expr: NodeKey, type_env: &mut TypeEnv, ctx: &mut Vec<Nod
                 .collect();
 
             let Some(Type::Func(func_args)) = lookup_ctx(type_env, ctx, func_name) else {
-                panic!(
+                fail_typecheck!(
                     "Calling function before its definition (or its type is not a function): {func_name}"
                 );
             };
@@ -357,16 +407,17 @@ fn typeof_op(ast: &AST, expr: NodeKey, type_env: &mut TypeEnv, ctx: &mut Vec<Nod
             // Check the arity and iterate over the things passed in.
             let call_arity = call_args.len();
             let func_arity = func_args.len() - 1;
-            assert_eq!(
-                call_arity, func_arity,
-                "Arity mismatch: function {func_name} \
-                has {func_arity} args but was called with {call_arity} args."
-            );
+            if call_arity != func_arity {
+                fail_typecheck!(
+                    "Arity mismatch: function {func_name} \
+                    has {func_arity} args but was called with {call_arity} args."
+                );
+            }
 
             // Now, let's make sure all the argument types match up.
             for (i, (fa, ca)) in func_args.iter().zip(call_args).enumerate() {
                 if !fa.eq_modulo_comptime(&ca) {
-                    panic!(
+                    fail_typecheck!(
                         "Argument {i} in '{func_name}': Expected argument type {fa:?}, got type {ca:?} instead"
                     );
                 }
@@ -377,6 +428,22 @@ fn typeof_op(ast: &AST, expr: NodeKey, type_env: &mut TypeEnv, ctx: &mut Vec<Nod
                 .expect("Functions that return \"nothing\" should return unit!")
                 .clone()
         }
+        ExprOp::If => {
+            let if_node = &ast.nodes[expr];
+            let cond_ty = typeof_expr(ast, if_node.args[0], type_env, ctx);
+            if cond_ty != Type::Bool {
+                fail_typecheck!("Guard condition in `if` should be `bool`, got {cond_ty:?} instead.");
+            }
+
+            let then_ty = typeof_expr(ast, if_node.args[1], type_env, ctx);
+            let else_ty = if if_node.args.len() > 2 { Some(typeof_expr(ast, if_node.args[2], type_env, ctx)) } else { None };
+            if let Some(else_ty) = else_ty && !then_ty.eq_modulo_comptime(&else_ty) {
+                fail_typecheck!("Branches result in differing types -- then branch: {then_ty:?}, else branch: {else_ty:?}");
+            }
+
+            then_ty
+        }
+        ExprOp::Else => typeof_expr(ast, ast.nodes[expr].args[0], type_env, ctx),
         n => todo!("Please implement {n:?}"),
     }
 }

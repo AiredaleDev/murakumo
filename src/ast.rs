@@ -29,6 +29,17 @@ impl<'src> AST<'src> {
     pub fn child(&self, node_key: NodeKey, n: usize) -> &ASTNode<'src> {
         &self.nodes[self.nodes[node_key].args[n]]
     }
+
+    pub(crate) fn get_ident(&self, node_key: NodeKey) -> Ustr {
+        match self.nodes[node_key].ty {
+            ASTNodeType::Ident(n) => n,
+            ASTNodeType::Expr(ExprOp::Decl)
+            | ASTNodeType::Stmt(StmtKind::Define | StmtKind::Assign) => {
+                self.get_ident(self.nodes[node_key].args[0])
+            }
+            _ => unreachable!("Only the above nodes contain idents."),
+        }
+    }
 }
 
 impl Display for AST<'_> {
@@ -89,6 +100,7 @@ pub enum ASTNodeType<'src> {
 pub enum Lit<'src> {
     #[default]
     Unit,
+    Bool(bool),
     Int(i64),
     Float(f64),
     String(&'src str),
@@ -98,6 +110,7 @@ impl<'s> Lit<'s> {
     pub fn ty(&self) -> Type {
         match self {
             Self::Unit => Type::Unit,
+            Self::Bool(_) => Type::Bool,
             Self::Int(_) => Type::ComptimeInt,
             Self::Float(_) => Type::ComptimeFloat,
             Self::String(_) => Type::String,
@@ -110,6 +123,7 @@ impl<'src> From<TokenType<'src>> for Lit<'src> {
         match value {
             TokenType::IntLit(i) => Lit::Int(i),
             TokenType::FloatLit(f) => Lit::Float(f),
+            TokenType::BoolLit(b) => Lit::Bool(b),
             TokenType::StrLit(s) => Lit::String(s),
             _ => unreachable!(
                 "We should never attempt to construct a literal out of any other tokens."
@@ -125,10 +139,15 @@ impl<'src> From<TokenType<'src>> for Lit<'src> {
 pub enum ExprOp {
     // Admits a `Group` of `Decl`s (params), a return type or another `Group` of `Decl`s and a `Block`.
     Func,
+
+    // Control flow constructs
+    // We parse these like sequences -- `else if` (two tokens) gets merged
+    // into `elif`.
+    If,
+    Else,
+
     // Regions of code delimited by two curly braces.
     Block,
-    AndThen,
-
     // For `()` in arithmetic and procedure literals.
     Group,
     Call,
@@ -138,6 +157,13 @@ pub enum ExprOp {
     // We need Decl > SeqSep > Group to build procedure parameter lists.
     Decl,
 
+    Eq,
+    Neq,
+    Gt,
+    Geq,
+    Lt,
+    Leq,
+
     // Arithmetic
     Subtract,
     Add,
@@ -145,23 +171,33 @@ pub enum ExprOp {
     Multiply,
     Mod,
     Negate,
+
+    // Booleans
+    Or,
+    And,
+    Not,
 }
 
 impl ExprOp {
     pub fn arg_count(&self) -> usize {
         match self {
-            Self::SeqSep | Self::AndThen => 0,
-            Self::Group | Self::Block | Self::Negate => 1,
+            Self::SeqSep => 0,
+            Self::Group | Self::Block | Self::Negate | Self::Not | Self::Else => 1,
             Self::Func => 3, // Params, Returns, Block
-            _ => 2,
+            _ => 2,          // Binops, `[El]If : BoolExpr, Block -> ASTNode`
         }
     }
 
     pub fn is_arithmetic(&self) -> bool {
-        matches!(self, Self::Add | Self::Subtract | Self::Multiply | Self::Divide | Self::Mod | Self::Negate)
+        matches!(
+            self,
+            Self::Add | Self::Subtract | Self::Multiply | Self::Divide | Self::Mod | Self::Negate
+        )
     }
 
-    // When I add bools I'm going to want to have an "is logical"
+    pub fn is_logical(&self) -> bool {
+        matches!(self, Self::And | Self::Or | Self::Not)
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

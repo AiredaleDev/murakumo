@@ -18,10 +18,11 @@ pub fn compile(input: &str) -> KumoResult<()> {
     // println!("{tokens:#?}");
     let mut ast = parse(tokens)?;
     println!("{ast}");
-    println!("\nFOLD CONSTANTS:\n");
-    ast::fold_constants(&mut ast);
-    println!("{ast}");
-    let type_env = infer_types(&ast);
+    // println!("\nFOLD CONSTANTS:\n");
+    // ast::fold_constants(&mut ast);
+    // println!("{ast}");
+    let type_env = infer_types(&ast)
+        .ok_or_else(|| KumoError::new("Typechecking failed.".into(), DebugInfo::default()));
     println!("\nINFER TYPES:\n");
     println!("{type_env:#?}");
     Ok(())
