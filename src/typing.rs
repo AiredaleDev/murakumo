@@ -432,13 +432,23 @@ fn typeof_op(ast: &AST, expr: NodeKey, type_env: &mut TypeEnv, ctx: &mut Vec<Nod
             let if_node = &ast.nodes[expr];
             let cond_ty = typeof_expr(ast, if_node.args[0], type_env, ctx);
             if cond_ty != Type::Bool {
-                fail_typecheck!("Guard condition in `if` should be `bool`, got {cond_ty:?} instead.");
+                fail_typecheck!(
+                    "Guard condition in `if` should be `bool`, got {cond_ty:?} instead."
+                );
             }
 
             let then_ty = typeof_expr(ast, if_node.args[1], type_env, ctx);
-            let else_ty = if if_node.args.len() > 2 { Some(typeof_expr(ast, if_node.args[2], type_env, ctx)) } else { None };
-            if let Some(else_ty) = else_ty && !then_ty.eq_modulo_comptime(&else_ty) {
-                fail_typecheck!("Branches result in differing types -- then branch: {then_ty:?}, else branch: {else_ty:?}");
+            let else_ty = if if_node.args.len() > 2 {
+                Some(typeof_expr(ast, if_node.args[2], type_env, ctx))
+            } else {
+                None
+            };
+            if let Some(else_ty) = else_ty
+                && !then_ty.eq_modulo_comptime(&else_ty)
+            {
+                fail_typecheck!(
+                    "Branches result in differing types -- then branch: {then_ty:?}, else branch: {else_ty:?}"
+                );
             }
 
             then_ty

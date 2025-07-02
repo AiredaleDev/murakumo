@@ -9,8 +9,8 @@ In terms of video/blog post content, I think the most valuable thing would be to
 ### Progress:
 
 - [ ] Front-end:
-  - [ ] Lexing (DONE excluding control-flow constructs)
-  - [ ] Parsing (DONE excluding control-flow constructs)
+  - [ ] Lexing (DONE excluding for-loops, record & variant types)
+  - [ ] Parsing (DONE excluding for-loops, record & variant types)
   - [ ] Type inference (Simple types)
     - [ ] Region parameters (honestly might just ditch this part of the project)
   - [ ] Nice error-reporting

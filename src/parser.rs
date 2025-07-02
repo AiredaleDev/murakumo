@@ -340,7 +340,7 @@ impl<'src> Parser<'src> {
                 ParserState::Unary
             }
             TokenType::Else => {
-                self.print_stack_states();
+                // self.print_stack_states();
                 // I think we can just push this onto the operator stack.
                 self.operator_stack.push(ExprOp::Else);
                 // We want to parse one more block, then perform a sequence reduction.
@@ -469,7 +469,6 @@ impl<'src> Parser<'src> {
                 // clone is trivial.
                 let block_parent = self.operator_stack.last().cloned();
                 let block_node = self.parse_block(block_parent)?;
-                eprintln!("VIA BINARY, {block_node:?}");
                 self.operand_stack.push(block_node);
 
                 ParserState::Unary
@@ -593,7 +592,7 @@ impl<'src> Parser<'src> {
         Ok(())
     }
 
-    fn print_stack_states(&self) {
+    fn _print_stack_states(&self) {
         eprintln!("{:?}", self.operator_stack);
         for and in &self.operand_stack {
             eprintln!("{:?}", self.ast.nodes[*and].ty);
