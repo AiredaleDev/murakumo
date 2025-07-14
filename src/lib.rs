@@ -21,6 +21,8 @@ pub fn compile(input: &str) -> KumoResult<()> {
     // println!("\nFOLD CONSTANTS:\n");
     // ast::fold_constants(&mut ast);
     // println!("{ast}");
+    println!("\nAS JSON:\n");
+    println!("{:#}", ast.to_json());
     let type_env = infer_types(&ast)
         .ok_or_else(|| KumoError::new("Typechecking failed.".into(), DebugInfo::default()));
     println!("\nINFER TYPES:\n");

@@ -256,6 +256,12 @@ impl<'iter, 'src: 'iter> Iterator for Lexer<'iter, 'src> {
             return None;
         }
 
+        // TODO: Bench this against a lookup table of lambdas/func ptrs (might need some trickery
+        // to get the indexing to work nicely, might not *shrug*) -- It's not immediately obvious
+        // if the way it is now (where it's probably pretty easy to inline the calls) is better
+        // than forcing the indirection (though with a match stmt the compiler must implement a big
+        // chain of comparisons)
+        // Unfortunately, because I made this a trait method.
         match self.next_char() {
             ':' => self.token(TokenType::Colon),
             ';' => self.token(TokenType::Semicolon),
