@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use slotmap::{DefaultKey as NodeKey, Key, SlotMap};
 use smallvec::SmallVec;
@@ -7,8 +8,9 @@ use ustr::Ustr;
 use crate::{TokenType, Type};
 
 // NOTE: This is not the canonical Rust way of building an AST!
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct AST<'src> {
+    #[serde(borrow)]
     pub nodes: SlotMap<NodeKey, ASTNode<'src>>,
     pub root: NodeKey,
 }
@@ -42,94 +44,6 @@ impl<'src> AST<'src> {
             _ => unreachable!("Only the above nodes contain idents."),
         }
     }
-
-    // This code makes building regression tests for the parser easier.
-    // Ustr doesn't support serde even though it easily could... bruh.
-    pub(crate) fn to_json(&self) -> serde_json::Value {
-        fn children_to_map(ast: &AST, node: NodeKey) -> serde_json::Value {
-            let mut node_map = serde_json::Map::default();
-            for c in &ast.nodes[node].args {
-                node_map.insert(
-                    format!("{:?} ({:?})", ast.nodes[*c].ty, c.data()),
-                    children_to_map(ast, *c),
-                );
-            }
-            serde_json::Value::Object(node_map)
-        }
-
-        let module_map = children_to_map(self, self.root);
-        json!({
-            format!("Module ({:?}):", self.root.data()): module_map
-        })
-    }
-
-    // Inverse of the above, so for running tests.
-    pub(crate) fn from_json(ast_as_json: serde_json::Value) -> Self {
-        fn lift_node(ast: &mut AST, node: &NodeMap) {
-            // Empty map -> nothing.
-            // We want to pack all of the things together
-            for (k, v) in node {
-                // Keys encode node types (up to first space).
-                let Some((node_ty_as_str, _)) = k.split_once(' ') else {
-                    panic!("Nonsense JSON -- either you or `to_json` is trippin!");
-                };
-
-                // Man, these node types also don't make deserialization convenient.
-                // If I did things the traditional way I wouldn't have to write this by
-                // hand lol
-                //
-                // I think I'm going to make limited changes to the source language,
-                // though remembering to add nodes to this thing isn't great.
-
-                // Praise be to vim regex
-                let node_ty = match node_ty_as_str.split_once('(') {
-                    Some((first, rest)) => match rest.split_once('(') {
-                        Some((second, rest)) => {}
-                        None => match rest {
-                            "Func" => ASTNodeType::Expr(ExprOp::Func),
-                            "If" => ASTNodeType::Expr(ExprOp::If),
-                            "Else" => ASTNodeType::Expr(ExprOp::Else),
-                            "Block" => ASTNodeType::Expr(ExprOp::Block),
-                            "Group" => ASTNodeType::Expr(ExprOp::Group),
-                            "Call" => ASTNodeType::Expr(ExprOp::Call),
-                            "SeqSep" => ASTNodeType::Expr(ExprOp::SeqSep),
-                            "Decl" => ASTNodeType::Expr(ExprOp::Decl),
-                            "Eq" => ASTNodeType::Expr(ExprOp::Eq),
-                            "Neq" => ASTNodeType::Expr(ExprOp::Neq),
-                            "Gt" => ASTNodeType::Expr(ExprOp::Gt),
-                            "Geq" => ASTNodeType::Expr(ExprOp::Geq),
-                            "Lt" => ASTNodeType::Expr(ExprOp::Lt),
-                            "Leq" => ASTNodeType::Expr(ExprOp::Leq),
-                            "Subtract" => ASTNodeType::Expr(ExprOp::Subtract),
-                            "Add" => ASTNodeType::Expr(ExprOp::Add),
-                            "Divide" => ASTNodeType::Expr(ExprOp::Divide),
-                            "Multiply" => ASTNodeType::Expr(ExprOp::Multiply),
-                            "Mod" => ASTNodeType::Expr(ExprOp::Mod),
-                            "Negate" => ASTNodeType::Expr(ExprOp::Negate),
-                            "Or" => ASTNodeType::Expr(ExprOp::Or),
-                            "And" => ASTNodeType::Expr(ExprOp::And),
-                            "Not" => ASTNodeType::Expr(ExprOp::Not),
-                            "Pure" => ASTNodeType::Stmt(StmtKind::Pure),
-                            "Assign" => ASTNodeType::Stmt(StmtKind::Assign),
-                            "Define" => ASTNodeType::Stmt(StmtKind::Define),
-                        },
-                    },
-                    None => ASTNodeType::Module,
-                };
-            }
-        }
-
-        let mut result = Self::default();
-
-        // Walk the map, the annoying part is having to implement "from str" for node type.
-        let json_root = ast_as_json
-            .as_object()
-            .expect("Come on man, you know better!");
-
-        lift_node(&mut result, json_root);
-
-        result
-    }
 }
 
 impl Display for AST<'_> {
@@ -154,8 +68,9 @@ impl Display for AST<'_> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ASTNode<'src> {
+    #[serde(borrow)]
     pub ty: ASTNodeType<'src>,
     // Tuples (including those in function defns and calls) as
     // well as blocks will likely end up on the heap.
@@ -176,9 +91,10 @@ impl<'src> ASTNode<'src> {
 }
 
 // NOTE: Maybe Decl should be its own category of node.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub enum ASTNodeType<'src> {
     Ident(Ustr),
+    #[serde(borrow)]
     Literal(Lit<'src>),
     Type(Type),
     Expr(ExprOp),
@@ -186,7 +102,7 @@ pub enum ASTNodeType<'src> {
     Module,
 }
 
-#[derive(Debug, Default, PartialEq)]
+#[derive(Debug, Default, PartialEq, Serialize, Deserialize)]
 pub enum Lit<'src> {
     #[default]
     Unit,
@@ -225,7 +141,7 @@ impl<'src> From<TokenType<'src>> for Lit<'src> {
 // The order of the enum fields defines operator precedence
 // for parsing.
 // Appears later -> binds tighter (closer to leaves).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum ExprOp {
     // Admits a `Group` of `Decl`s (params), a return type or another `Group` of `Decl`s and a `Block`.
     Func,
@@ -290,7 +206,7 @@ impl ExprOp {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum StmtKind {
     // Just `expr;` or `;`.
     // These may be "pure" but that doesn't mean the

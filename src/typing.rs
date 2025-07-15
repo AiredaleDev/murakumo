@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use slotmap::DefaultKey as NodeKey;
 use std::collections::HashMap;
 use ustr::{Ustr, UstrMap};
@@ -22,7 +23,7 @@ macro_rules! fail_typecheck {
 // block/module and registering them. This would also allow for calling a function that is defined
 // after somewhere it is called (a basic convenience modern programming languages provide)
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Type {
     // For type inference.
     Hole,

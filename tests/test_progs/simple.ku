@@ -7,10 +7,10 @@ add :: (x: int, y: int) -> int {
 
 // We're going to need to pass pointers or have for-loops for this
 // to actually be a "mac" first.
-// fake_mac :: (x: int, y: int) -> int {
-//     result := x * add(x, y);
-//     result
-// }
+fake_mac :: (x: int, y: int) -> int {
+    result := x * add(x, y);
+    result
+}
 
 main :: () {
     // Tells you how it is.
